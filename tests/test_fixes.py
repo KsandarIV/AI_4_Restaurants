@@ -136,6 +136,10 @@ def test_customer_id_reaches_reservation():
     """
     Verify customer_id passes through LangGraph and is saved on the reservation in SQLite.
     """
+    with SessionLocal() as db:
+        db.query(crud.Reservation).filter(crud.Reservation.date == "2026-10-21").delete()
+        db.commit()
+
     mock_llm = MockChatModel()
     app = build_graph(llm=mock_llm)
 

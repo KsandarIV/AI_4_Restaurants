@@ -47,6 +47,12 @@ def test_graph_info_query():
     assert "pranzo" in res["reply"].lower()
 
 def test_graph_booking_flow():
+    from backend.database.connection import SessionLocal
+    from backend.database import crud
+    with SessionLocal() as db:
+        db.query(crud.Reservation).filter(crud.Reservation.date == "2026-10-21").delete()
+        db.commit()
+
     mock_llm = MockChatModel()
     app = build_graph(llm=mock_llm)
 
