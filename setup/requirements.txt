@@ -16,7 +16,7 @@ numpy>=1.26
 faster-whisper>=1.0
 piper-tts>=1.2
 onnxruntime>=1.18
-webrtcvad>=2.0  # OPZIONALE (setup lo salta se manca il compilatore C++; default: EnergyVAD)
+webrtcvad-wheels>=2.0.10  # fork con wheel precompilate (webrtcvad richiede MSVC su Windows); si importa sempre come "webrtcvad"
 
 # --- BE (membro 1: LangGraph + Ollama locale + SQLite) ---
 langchain>=0.3.0
