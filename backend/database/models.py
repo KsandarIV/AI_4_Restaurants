@@ -38,6 +38,24 @@ class Reservation(Base):
     def __repr__(self):
         return f"<Reservation {self.booking_code} on {self.date} {self.time} for {self.guests_count}p ({self.status})>"
 
+class Customer(Base):
+    """Contact data of a customer. This is the ONLY place where name and phone are stored.
+
+    Reservations point to it through the anonymous `customer_id` token (no foreign key on purpose:
+    it would need a migration of the existing SQLite file). Never expose name/phone to the LLM.
+    """
+    __tablename__ = "customers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(String(100), unique=True, index=True, nullable=False)  # anonymous token, e.g. cust_8f3a1c9d2b4e
+    name = Column(String(120), nullable=False)
+    phone = Column(String(20), nullable=False)  # E.164, e.g. +393331234567
+    consent_at = Column(DateTime, nullable=False)  # when the customer agreed to the use of the data
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    def __repr__(self):
+        return f"<Customer {self.customer_id}>"  # never print name/phone
+
 class MenuItem(Base):
     __tablename__ = "menu_items"
 

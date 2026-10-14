@@ -14,6 +14,9 @@ from backend.llm_provider import get_llm
 
 logger = logging.getLogger(__name__)
 
+# Tools that act on behalf of a customer: their customer_id is forced from the session state
+CUSTOMER_TOOLS = {"create_reservation", "get_reservation", "modify_reservation", "cancel_reservation"}
+
 def create_agent_node(llm):
     """Factory creating the agent decision node with bound tools, custom prompt per client_type, and customer_id."""
     llm_with_tools = llm.bind_tools(ALL_TOOLS)
@@ -38,13 +41,12 @@ def create_agent_node(llm):
         # Invoke model
         response = llm_with_tools.invoke(messages)
 
-        # Safety fallback: if LLM called create_reservation but missed customer_id, inject it from state
+        # The customer_id always comes from the session state, never from the LLM: even if the model
+        # (or a prompt injection) names another customer, the tools act on behalf of the real one.
         if hasattr(response, "tool_calls") and response.tool_calls:
             for tc in response.tool_calls:
-                if tc.get("name") == "create_reservation":
-                    args = tc.get("args", {})
-                    if not args.get("customer_id") or args.get("customer_id") == "anon_client":
-                        args["customer_id"] = customer_id
+                if tc.get("name") in CUSTOMER_TOOLS:
+                    tc.setdefault("args", {})["customer_id"] = customer_id
 
         return {"messages": [response]}
 
