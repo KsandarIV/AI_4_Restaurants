@@ -1,6 +1,9 @@
+import json
 import datetime
+import asyncio
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from backend.config import settings
@@ -49,9 +52,75 @@ def chat_endpoint(request: ChatRequest):
             detail=f"Errore interno durante l'elaborazione conversazionale: {str(e)}"
         )
 
+@router.post("/chat/stream", summary="SSE Streaming endpoint per VoiceBot e ChatBot")
+async def chat_stream_endpoint(request: Request):
+    """
+    SSE stream endpoint compatible with VoiceBot client contract:
+    Receives JSON with 'messages' or 'message', streams tokens:
+      data: {"token": "..."}
+      ...
+      data: [DONE]
+    """
+    body = await request.json()
+    message_text = ""
+    session_id = body.get("session_id", "voice_stream_sess")
+    customer_id = body.get("customer_id") or body.get("name") or "anon_voice"
+    client_type = body.get("client_type", "voice")
+
+    if "messages" in body and isinstance(body["messages"], list):
+        # Extract the last user message
+        for m in reversed(body["messages"]):
+            if m.get("role") == "user":
+                message_text = m.get("content", "")
+                break
+    elif "message" in body:
+        message_text = str(body["message"])
+
+    if not message_text:
+        message_text = "Buongiorno"
+
+    # Process message with LangGraph
+    result = process_message(
+        message=message_text,
+        session_id=session_id,
+        customer_id=customer_id,
+        client_type=client_type
+    )
+    reply_text = result["reply"]
+
+    async def event_generator():
+        # Stream response word by word for natural voice TTS consumption
+        words = reply_text.split(" ")
+        for i, word in enumerate(words):
+            token = word + (" " if i < len(words) - 1 else "")
+            payload = json.dumps({"token": token})
+            yield f"data: {payload}\n\n"
+            await asyncio.sleep(0.03)
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 # -------------------------------------------------------------
-# Direct CRUD Endpoints (Reservations, Menu, Info)
+# Direct CRUD Endpoints (Reservations, Menu, Availability, Info)
 # -------------------------------------------------------------
+@router.get("/availability", summary="Verifica disponibilità tavoli (utilizzato dal VoiceBot)")
+def get_availability_endpoint(
+    date: str = Query(..., description="Data YYYY-MM-DD"),
+    time: str = Query(..., description="Orario HH:MM"),
+    party_size: Optional[int] = Query(None, description="Numero persone (alias)"),
+    guests: Optional[int] = Query(None, description="Numero persone"),
+    db: Session = Depends(get_db)
+):
+    num_guests = party_size or guests or 2
+    tables = crud.get_available_tables(db=db, date=date, time=time, guests=num_guests)
+    return {
+        "available": len(tables) > 0,
+        "tables_count": len(tables),
+        "date": date,
+        "time": time,
+        "party_size": num_guests
+    }
+
 @router.get("/reservations/{booking_code}", response_model=ReservationResponse, summary="Recupera stato prenotazione")
 def get_reservation_endpoint(booking_code: str, db: Session = Depends(get_db)):
     res = crud.get_reservation(db, booking_code)
@@ -61,12 +130,18 @@ def get_reservation_endpoint(booking_code: str, db: Session = Depends(get_db)):
 
 @router.post("/reservations", response_model=ReservationResponse, summary="Crea prenotazione diretta")
 def create_reservation_endpoint(request: DirectReservationCreateRequest, db: Session = Depends(get_db)):
+    num_guests = request.guests or request.party_size
+    if not num_guests:
+        raise HTTPException(status_code=400, detail="Specificare il numero di persone ('guests' o 'party_size').")
+
+    cid = request.customer_id or request.name or "anon_client"
+
     result = crud.create_reservation(
         db=db,
         date=request.date,
         time=request.time,
-        guests=request.guests,
-        customer_id=request.customer_id,
+        guests=num_guests,
+        customer_id=cid,
         special_requests=request.special_requests,
         preferred_location=request.preferred_location
     )
@@ -75,13 +150,15 @@ def create_reservation_endpoint(request: DirectReservationCreateRequest, db: Ses
     return ReservationResponse(**result)
 
 @router.patch("/reservations/{booking_code}", response_model=ReservationResponse, summary="Modifica prenotazione")
+@router.put("/reservations/{booking_code}", response_model=ReservationResponse, summary="Modifica prenotazione (alias PUT)")
 def modify_reservation_endpoint(booking_code: str, request: DirectReservationModifyRequest, db: Session = Depends(get_db)):
+    new_g = request.new_guests or request.party_size
     result = crud.modify_reservation(
         db=db,
         booking_code=booking_code,
         new_date=request.new_date,
         new_time=request.new_time,
-        new_guests=request.new_guests,
+        new_guests=new_g,
         new_requests=request.new_requests
     )
     if not result.get("success"):

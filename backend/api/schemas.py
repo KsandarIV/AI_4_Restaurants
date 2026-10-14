@@ -17,8 +17,10 @@ class ChatResponse(BaseModel):
 class DirectReservationCreateRequest(BaseModel):
     date: str = Field(..., description="Data nel formato YYYY-MM-DD")
     time: str = Field(..., description="Orario nel formato HH:MM")
-    guests: int = Field(..., ge=1, le=20, description="Numero di ospiti")
-    customer_id: str = Field(default="anon_client", description="Token cliente anonimo")
+    guests: Optional[int] = Field(None, ge=1, le=20, description="Numero di ospiti")
+    party_size: Optional[int] = Field(None, ge=1, le=20, description="Alias per guests")
+    customer_id: Optional[str] = Field(default="anon_client", description="Token cliente anonimo")
+    name: Optional[str] = Field(None, description="Alias per customer_id")
     special_requests: Optional[str] = Field(None, description="Note o richieste speciali")
     preferred_location: Optional[str] = Field(None, description="interno, terrazza, giardino")
 
@@ -26,6 +28,7 @@ class DirectReservationModifyRequest(BaseModel):
     new_date: Optional[str] = Field(None, description="Nuova data (YYYY-MM-DD)")
     new_time: Optional[str] = Field(None, description="Nuovo orario (HH:MM)")
     new_guests: Optional[int] = Field(None, ge=1, le=20, description="Nuovo numero di ospiti")
+    party_size: Optional[int] = Field(None, ge=1, le=20, description="Alias per new_guests")
     new_requests: Optional[str] = Field(None, description="Nuove note speciali")
 
 class ReservationResponse(BaseModel):

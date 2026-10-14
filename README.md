@@ -1,27 +1,27 @@
-# AI_4_Restaurants — Backend Intelligente (LangGraph & LangChain)
+# AI 4 Restaurants — Sistema di Prenotazione Ristorante con AI
 
-Sistema di intelligenza artificiale per la gestione automatizzata delle prenotazioni e delle informazioni di un noto ristorante (**Trattoria Bella Napoli**), sviluppato in Python con **LangGraph**, **LangChain**, **FastAPI** e **SQLite**.
+Sistema distribuito di intelligenza artificiale per la prenotazione di tavoli in un noto ristorante (**Trattoria Bella Napoli**), sviluppato in team di 3 persone:
 
-Questo repository contiene il **Backend (Membro 1)**, progettato per comunicare via rete locale (LAN) con il bot testuale (**CHAT - Membro 2**) e il bot vocale (**VOICE - Membro 3**).
-
----
-
-## 📐 Architettura del Sistema
+| Componente | Membro | Descrizione |
+|---|---|---|
+| **BE** | **Membro 1** | Backend Python con LLM locale (LangGraph, LangChain) e database SQLite (gestione disponibilità, tavoli, menu, prenotazioni) |
+| **CHAT** | **Membro 2** | Chatbot testuale che chiama il BE via rete locale (Streamlit / UI di chat) |
+| **VOICE** | **Membro 3** | Voicebot vocale che chiama il BE via rete locale (STT Whisper locale + TTS) |
 
 ```mermaid
 flowchart TD
     subgraph LAN_Clients["Client su Macchine Remote (LAN)"]
         ChatBot["💻 CHAT (Membro 2)<br/>Chatbot testuale"]
-        VoiceBot["🎙️ VOICE (Membro 3)<br/>Voicebot vocale"]
+        VoiceBot["🎙️ VOICE (Membro 3)<br/>Voicebot vocale (STT + TTS)"]
     end
 
     subgraph Backend_Server["BE Python (Membro 1) — Host LAN :8000"]
         FastAPI["⚡ FastAPI Server<br/>(CORS abilitato, binding 0.0.0.0)"]
         
         subgraph LangGraph_Engine["LangGraph State Engine"]
-            Agent["🤖 Agente LLM<br/>(System Prompt + Tool Calling)"]
+            Agent["🤖 Agente LLM<br/>(Prompt specializzato per Chat e Voice)"]
             Tools["🛠️ ToolNode<br/>(Verifica, Prenota, Modifica, Cancella, Menu, Info)"]
-            Memory["🧠 MemorySaver<br/>(Thread Checkpoint di sessione)"]
+            Memory["🧠 SqliteSaver<br/>(Persistenza su SQLite per session_id)"]
         end
 
         subgraph Local_LLM["LLM Locale"]
@@ -34,13 +34,23 @@ flowchart TD
     end
 
     ChatBot -- "HTTP POST /api/chat" --> FastAPI
-    VoiceBot -- "HTTP POST /api/chat" --> FastAPI
+    VoiceBot -- "HTTP POST /api/chat o /api/chat/stream" --> FastAPI
     FastAPI --> LangGraph_Engine
     Agent <--> Ollama
     Agent <--> Tools
     Tools <--> SQLite
     Agent <--> Memory
 ```
+
+---
+
+## 📐 Vincoli di Progetto Rispettati
+
+1. **Tre macchine separate (LAN)**: Il BE ascolta su `0.0.0.0:8000` con CORS aperto a tutte le origini LAN.
+2. **Comunicazione via rete**: API REST e Streaming SSE su HTTP JSON documentate via Swagger su `/docs`.
+3. **Rimozione PII / Privacy**: I bot client CHAT e VOICE rimuovono i dati personali prima dell'invio. Il BE opera solo con un `customer_id` anonimizzato e con il `booking_code` univoco (es. `RES-9A8B2C`). Nessun dato privato è salvato nel DB SQLite.
+4. **Modelli 100% Locali**: Modelli LLM eseguiti localmente tramite **Ollama** (es. `llama3.2`, `mistral`).
+5. **Persistenza & Concorrenza**: Stato conversazionale salvato su SQLite tramite `SqliteSaver` (resiste ai riavvii del server) e lock di concorrenza su transazioni di prenotazione.
 
 ---
 
@@ -65,27 +75,15 @@ flowchart TD
 
 ---
 
-## 🛡️ Rispetto dei Vincoli di Progetto
-
-| Vincolo | Come è stato implementato |
-| :--- | :--- |
-| **1. Tre componenti su macchine diverse** | Il backend ascolta su `0.0.0.0:8000` con CORS middleware aperto a qualsiasi origine LAN. |
-| **2. Comunicazione via rete** | Esposizione di API REST JSON documentate (Swagger / OpenAPI) su protocollo HTTP. |
-| **3. Rimozione informazioni personali (PII)** | I client CHAT/VOICE pre-processano i messaggi. Il BE opera esclusivamente con un `customer_id` anonimizzato (es. `anon_user_xyz`) e con il `booking_code` (`RES-XXXXXX`). Il database SQLite non salva nomi completi, email o numeri di telefono privati. |
-| **4. Modelli in ambiente LOCALE** | Integrazione diretta con **Ollama** (`ChatOllama`) per modelli eseguiti in locale (es. `llama3.2`, `mistral`, `qwen2.5`). Disponibile anche un `MockChatModel` per test e sviluppo offline senza GPU. |
-| **5. Due Stakeholder** | - **Responsabile Tecnico**: Codice modulare, LangGraph StateGraph, type hints Pydantic v2, transazioni SQLAlchemy, suite di test automatizzati (16/16 passati).<br/>- **Ristoratore**: Regole di capienza reali, prevenzione overbooking, gestione turni pranzo/cena, menu campano autentico con allergeni e risposte calorose in italiano. |
-
----
-
 ## 🚀 Guida Rapida all'Installazione
 
 ### 1. Prerequisiti
-- **Python 3.10+** (testato e verificato con Python 3.14)
+- **Python 3.10+** (verificato con Python 3.11 e Python 3.14)
 - **Ollama** installato in locale ([scarica Ollama](https://ollama.com/download))
 
 ### 2. Configurazione Ambiente
 ```bash
-# Clona il repository ed entra nella cartella
+# Entra nella cartella del progetto
 cd AI_4_Restaurants
 
 # Crea l'ambiente virtuale
@@ -127,39 +125,34 @@ All'avvio, il backend:
 
 ---
 
-## 📡 Integrazione per CHAT (Membro 2) e VOICE (Membro 3)
+## 📡 Contratti API per CHAT (Membro 2) e VOICE (Membro 3)
 
-### Endpoint Conversazionale Principale
-- **Metodo**: `POST`
-- **URL**: `http://<IP_DELLA_MACCHINA_BE>:8000/api/chat`
-- **Headers**: `Content-Type: application/json`
+| Metodo | Endpoint | Descrizione |
+|---|---|---|
+| `GET` | `/health` o `/api/health` | Healthcheck del backend |
+| `POST` | `/api/chat` | Chat conversazionale JSON (ritorna `{ reply, session_id }`) |
+| `POST` | `/api/chat/stream` o `/chat/stream` | Streaming SSE per voice bot (`data: {"token": "..."}`) |
+| `GET` | `/api/availability` | Query parametri: `date`, `time`, `party_size` |
+| `POST` | `/api/reservations` | Crea prenotazione (`date`, `time`, `party_size`, `name`) |
+| `GET` | `/api/reservations/{booking_code}` | Dettagli prenotazione |
+| `PATCH`/`PUT` | `/api/reservations/{booking_code}` | Modifica data, ora o numero persone |
+| `DELETE` | `/api/reservations/{booking_code}` | Cancella prenotazione |
+| `GET` | `/api/menu` | Elenco piatti con filtri allergeni/diete |
+| `GET` | `/api/info` | Orari, indirizzo, parcheggio, servizi |
 
-#### Payload di Richiesta:
+### Esempio chiamata Chat standard:
 ```json
+POST /api/chat
 {
-  "message": "Vorrei prenotare un tavolo per 4 persone per domani sera alle 20:30",
-  "session_id": "sessione_chat_101",
-  "customer_id": "anon_user_abc123",
+  "message": "Vorrei prenotare per 4 persone domani alle 20:30",
+  "session_id": "sess_123",
+  "customer_id": "anon_user_abc",
   "client_type": "chat"
-}
-```
-*Note per i client*:
-- `client_type` può essere `"chat"` oppure `"voice"`. Quando è impostato su `"voice"`, l'agente adotta uno stile particolarmente fluido ed evita formattazioni complesse per favorire la sintesi vocale TTS.
-- `session_id` deve essere mantenuto costante per l'intera durata del dialogo di un utente, consentendo a LangGraph di mantenere lo storico della conversazione.
-
-#### Risposta del Backend:
-```json
-{
-  "reply": "Perfetto! Ho confermato la prenotazione per 4 persone per il 2026-10-15 alle 20:30. Il vostro tavolo è il #4 in sala interna. Il vostro codice di prenotazione è RES-A7B8C9. Ricordate di conservarlo per eventuali modifiche!",
-  "session_id": "sessione_chat_101",
-  "customer_id": "anon_user_abc123",
-  "client_type": "chat",
-  "timestamp": "2026-10-14T13:00:00.000Z"
 }
 ```
 
 ### Script Client di Test per la Rete LAN
-Nella cartella principale è disponibile lo script `client_demo.py` che i membri del team possono eseguire da un'altra macchina della LAN per testare subito l'integrazione:
+È disponibile `client_demo.py` che i compagni possono lanciare per testare subito il BE da un'altra macchina:
 ```bash
 python client_demo.py http://<IP_MACCHINA_BE>:8000
 ```
@@ -179,11 +172,11 @@ Risultato: **22 passed** (100% test superati).
 ## 👥 Guida alla Presentazione per gli Stakeholder
 
 ### 1. Presentazione al Responsabile Tecnico
-- **Architettura LangGraph**: Mostra il grafo degli stati in `backend/graph/workflow.py`, spiegando l'uso di `ToolNode`, `tools_condition` e `MemorySaver` per la persistenza del contesto multi-turno su thread ID.
-- **Privacy e Conformità Vincoli**: Evidenzia come le PII siano gestite tramite token anonimi (`customer_id`) e come l'LLM operi al 100% in locale tramite Ollama senza trasmettere dati all'esterno.
-- **Integrità del Database**: Spiega la logica di `get_available_tables` in `backend/database/crud.py`, che assegna i tavoli con algoritmo best-fit ed evita doppie prenotazioni verificando data, fascia oraria e capienza.
-- **Documentazione OpenAPI**: Mostra `http://localhost:8000/docs` con schemi di validazione Pydantic v2 rigorosi.
+- **Architettura LangGraph**: Grafo degli stati in `backend/graph/workflow.py`, `ToolNode`, `tools_condition` e `SqliteSaver` per la persistenza su disco del contesto multi-turno.
+- **Privacy e Conformità Vincoli**: PII gestite tramite token anonimi (`customer_id`) e modello LLM locale al 100% su Ollama.
+- **Integrità del Database e Concorrenza**: Lock thread-safe per prevenire race conditions e calcolo della rotazione oraria di 90 minuti.
+- **Documentazione OpenAPI**: Swagger UI su `http://localhost:8000/docs`.
 
 ### 2. Presentazione al Ristoratore
-- **Esperienza Utente Naturale**: Dimostra la conversazione in italiano, sia per la prenotazione rapida sia per la modifica o cancellazione tramite codice univoco.
-- **Regole di Business**: Mostra come il sistema rispetti la chiusura del Lunedì, i turni di Pranzo e Cena, e risponda con precisione a domande su piatti senza glutine, vegetariani, parcheggio e animali ammessi.
+- **Esperienza Utente Naturale**: Conversazione fluida in italiano, con prompt specializzato sintetico per la voce (TTS) ed esauriente per la chat.
+- **Regole di Business**: Chiusura del Lunedì, finestre di arrivo pranzo e cena, rispetto della capienza tavoli e menu tipico con allergeni e opzioni senza glutine/vegetariane.

@@ -45,8 +45,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API router
+# Include API router at /api and root aliases for VoiceBot compatibility
 app.include_router(api_router, prefix="/api")
+app.include_router(api_router, prefix="")
+
+@app.get("/health", summary="Root healthcheck alias")
+def root_health():
+    from backend.api.routes import health_endpoint
+    return health_endpoint()
 
 @app.get("/", summary="Root endpoint")
 def root():
