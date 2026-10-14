@@ -76,7 +76,8 @@ def file_hash(path: Path) -> str:
 
 
 def step_python() -> bool:
-    log(f"interprete: {sys.version.split()[0]} (richiesto >= {'.'.join(map(str, MIN_PY))})")
+    log(
+        f"interprete: {sys.version.split()[0]} (richiesto >= {'.'.join(map(str, MIN_PY))})")
     if sys.version_info < MIN_PY:
         log("ERRORE: Python troppo vecchio, installa Python 3.11 o 3.12.")
         return False
@@ -117,12 +118,24 @@ def step_requirements(python: str) -> bool:
     log("upgrade pip...")
     run([python, "-m", "pip", "install", "--upgrade", "pip"], timeout=300)
     log("installazione dipendenze (puo' richiedere diversi minuti)...")
-    code, out = run([python, "-m", "pip", "install", "-r", str(REQ_FILE)], timeout=1800)
+    code, out = run([python, "-m", "pip", "install",
+                    "-r", str(REQ_FILE)], timeout=1800)
     print(out[-3000:])
     if code != 0:
         log("ERRORE pip: vedi output sopra. Rilancia lo script dopo aver sistemato.")
         return False
     log("dipendenze installate.")
+    # Pacchetti locali del repo (voice/be/chat) installati editable nel venv condiviso,
+    # cosi' `python -m voicebot` funziona dalla root senza PYTHONPATH.
+    for pkg in ("voice", "be", "chat"):
+        proj = ROOT / pkg / "pyproject.toml"
+        if proj.exists():
+            log(f"installazione editable ./{pkg} ...")
+            code, out = run([python, "-m", "pip", "install",
+                            "-e", str(proj.parent)], timeout=600)
+            if code != 0:
+                log(
+                    f"AVVISO: editable install ./{pkg} fallita (non fatale):\n{out[-1000:]}")
     return True
 
 
@@ -210,9 +223,12 @@ def is_setup() -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     global ASSUME_YES
-    parser = argparse.ArgumentParser(description="Setup venv condiviso + modelli locali.")
-    parser.add_argument("--yes", "-y", action="store_true", help="accetta ogni download senza chiedere")
-    parser.add_argument("--check-only", action="store_true", help="verifica soltanto, non installa nulla")
+    parser = argparse.ArgumentParser(
+        description="Setup venv condiviso + modelli locali.")
+    parser.add_argument("--yes", "-y", action="store_true",
+                        help="accetta ogni download senza chiedere")
+    parser.add_argument("--check-only", action="store_true",
+                        help="verifica soltanto, non installa nulla")
     parser.add_argument("--skip-ollama", action="store_true")
     parser.add_argument("--skip-piper", action="store_true")
     parser.add_argument("--skip-requirements", action="store_true")

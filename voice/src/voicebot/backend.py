@@ -1,14 +1,18 @@
-"""Async HTTP client toward the BE (separate LAN machine).
+"""Async HTTP client toward the BE (separate LAN machine, backend/api/routes.py).
 
-Contract (configurable, documented here and in README):
-  GET  {base}/health
-  GET  {base}/api/menu
-  GET  {base}/api/info
-  GET  {base}/api/availability?date=YYYY-MM-DD&time=HH:MM&party_size=N
-  POST {base}/api/reservations            {date,time,party_size,name}
-  PUT  {base}/api/reservations/{id}       {date?,time?,party_size?}
-  DELETE {base}/api/reservations/{id}
-  POST {base}/chat/stream  (SSE: lines `data: {"token": "..."}` + `data: [DONE]`)
+Real BE contract (mounted at /api AND at root):
+  GET  {base}/health | {base}/api/health   -> {status, restaurant, llm_provider, ...}
+  POST {base}/api/chat        {message, session_id, customer_id, client_type} -> {reply, ...}
+  POST {base}/api/chat/stream {messages|message, session_id, customer_id, client_type}
+                               SSE: `data: {"token": "..."}` ... `data: [DONE]`
+                               (BE runs full LangGraph inference, THEN streams word-by-word)
+  GET  {base}/api/availability?date=YYYY-MM-DD&time=HH:MM&party_size=N|guests=N
+  POST {base}/api/reservations              {date,time,guests|party_size,customer_id|name,...}
+  GET  {base}/api/reservations/{booking_code}
+  PATCH|PUT {base}/api/reservations/{booking_code}
+  DELETE {base}/api/reservations/{booking_code}
+  GET  {base}/api/menu[?category&allergen_free&is_vegetarian&is_vegan&is_gluten_free]
+  GET  {base}/api/info[?key=address|opening_hours|phone|parking]
 
 All requests have timeouts + exponential-backoff retries (re-connection logic).
 """
@@ -103,22 +107,59 @@ class BackendClient:
         )
 
     async def create_reservation(self, date: str, time: str, party_size: int, name: str) -> Any:
-        """Create a reservation (name is PII-scrubbed in logs, sent as given per BE contract)."""
+        """Create a reservation (BE maps name -> anonymous customer_id)."""
         log.info("create_reservation date=%s time=%s party=%d name=%s", date, time, party_size, scrub_pii(name))
         return await self._request(
             "POST", "/api/reservations",
             content=json.dumps({"date": date, "time": time, "party_size": party_size, "name": name}),
         )
 
+    async def get_reservation(self, booking_code: str) -> Any:
+        """Fetch a reservation by its booking code (e.g. RES-9A8B2C)."""
+        return await self._request("GET", f"/api/reservations/{booking_code}")
+
+    async def modify_reservation(
+        self,
+        booking_code: str,
+        new_date: str | None = None,
+        new_time: str | None = None,
+        new_party_size: int | None = None,
+    ) -> Any:
+        """Modify date/time/party of a reservation by booking code."""
+        body: dict[str, Any] = {}
+        if new_date is not None:
+            body["new_date"] = new_date
+        if new_time is not None:
+            body["new_time"] = new_time
+        if new_party_size is not None:
+            body["new_guests"] = new_party_size
+        return await self._request("PATCH", f"/api/reservations/{booking_code}", content=json.dumps(body))
+
+    async def cancel_reservation(self, booking_code: str) -> Any:
+        """Cancel a reservation by booking code."""
+        return await self._request("DELETE", f"/api/reservations/{booking_code}")
+
     async def stream_chat(
-        self, messages: list[dict[str, str]], timeout_s: float = 30.0
+        self,
+        messages: list[dict[str, str]],
+        timeout_s: float = 30.0,
+        session_id: str = "voice_sess",
+        customer_id: str = "anon_voice",
+        client_type: str = "voice",
     ) -> AsyncIterator[str]:
         """Yield LLM tokens from the BE SSE stream with auto-reconnect (1 retry).
 
-        BE streams ``data: {"token": "..."}`` lines terminated by ``data: [DONE]``.
+        Sends BE-native session/customer/client fields so LangGraph memory works
+        across turns. BE streams ``data: {"token": "..."}`` lines terminated by
+        ``data: [DONE]``.
         """
-        payload = {"messages": [{"role": m["role"], "content": scrub_pii(m["content"])} for m in messages],
-                   "stream": True}
+        payload = {
+            "messages": [{"role": m["role"], "content": scrub_pii(m["content"])} for m in messages],
+            "stream": True,
+            "session_id": session_id,
+            "customer_id": customer_id,
+            "client_type": client_type,
+        }
         for attempt in (1, 2):
             try:
                 async with self._client.stream(
