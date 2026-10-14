@@ -1,10 +1,15 @@
 """BE finto per provare il chatbot senza il BE vero. Nessuna dipendenza esterna.
 
-Avvio:  python finto_be.py          (ascolta su http://localhost:8000)
-Imita il contratto del BE vero: POST /api/chat e GET /api/health.
+Avvio:  python finto_be.py [porta]  (predefinita 8000: http://localhost:8000)
+Imita il contratto del BE: POST /api/customers (proposto, non ancora nel BE vero),
+POST /api/chat e GET /api/health.
 """
 import json
+import sys
+import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+CLIENTI = {}  # customer_id -> {"name", "phone"}: nel BE vero starebbe in una tabella del database
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -16,17 +21,38 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(dati)
 
+    def _leggi_json(self):
+        return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+
     def do_GET(self):
         if self.path == "/api/health":
-            self._rispondi(200, {"status": "ok", "llm_provider": "finto"})
+            self._rispondi(200, {"status": "ok", "llm_provider": "finto", "clienti_registrati": len(CLIENTI)})
         else:
             self._rispondi(404, {"detail": "Not Found"})
 
     def do_POST(self):
-        if self.path != "/api/chat":
-            return self._rispondi(404, {"detail": "Not Found"})
+        if self.path == "/api/customers":
+            return self._registra_cliente()
+        if self.path == "/api/chat":
+            return self._chat()
+        self._rispondi(404, {"detail": "Not Found"})
+
+    def _registra_cliente(self):
         try:
-            richiesta = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            richiesta = self._leggi_json()
+            nome, telefono, consenso = richiesta["name"], richiesta["phone"], richiesta["consent"]
+        except (ValueError, KeyError):
+            return self._rispondi(422, {"detail": "name, phone e consent sono obbligatori"})
+        if not nome.strip() or not telefono.startswith("+") or consenso is not True:
+            return self._rispondi(422, {"detail": "dati non validi"})
+        customer_id = f"cust_{uuid.uuid4().hex[:8]}"
+        CLIENTI[customer_id] = {"name": nome, "phone": telefono}
+        print(f"[finto BE] cliente registrato: {customer_id}")  # nome e telefono non si stampano
+        self._rispondi(200, {"customer_id": customer_id})
+
+    def _chat(self):
+        try:
+            richiesta = self._leggi_json()
             messaggio, sessione = richiesta["message"], richiesta["session_id"]
         except (ValueError, KeyError):
             return self._rispondi(422, {"detail": "message e session_id sono obbligatori"})
@@ -44,5 +70,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print("BE finto su http://localhost:8000  (Ctrl+C per fermare)")
-    HTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
+    porta = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+    print(f"BE finto su http://localhost:{porta}  (Ctrl+C per fermare)")
+    HTTPServer(("0.0.0.0", porta), Handler).serve_forever()
