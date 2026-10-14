@@ -1,12 +1,21 @@
 {
-  "_commento": "Mappa della LAN: chi e' chi e come si avvia. IP modificabili senza toccare codice.",
+  "_commento": "ATTENZIONE: gli IP sotto sono ESEMPI segnaposto (mai rilevati: le macchine non si sono mai viste). Sostituiscili con gli IP reali (ipconfig su ogni macchina, tutte sulla stessa rete). Lo script chiede comunque l'IP del BE al primo avvio e --be-host lo impone.",
+  "_come_trovare_ip": "Windows: ipconfig -> 'Indirizzo IPv4' della scheda Wi-Fi/Ethernet (es. 192.168.1.23). Le 3 macchine devono stare sulla stessa rete.",
+  "ordine_avvio": ["be", "chat", "voice"],
+  "_regola": "Il BE parte PER PRIMO e deve restare su: senza BE, chat e voice non possono funzionare (lo script li fa attendere il BE prima di avviarsi).",
   "be": {
+    "macchina": "BE",
+    "fa": "Avvia il codice in backend/ (API FastAPI + LangGraph + SQLite + Ollama). Fulcro: deve partire assolutamente e restare su.",
+    "cartella": "backend/",
     "host": "192.168.1.10",
     "port": 8000,
     "health": "/api/health",
     "start": { "cwd": ".", "argv": [".venv/Scripts/python.exe", "-m", "backend.main"] }
   },
   "chat": {
+    "macchina": "CHAT",
+    "fa": "Avvia il codice in chat/ (Streamlit). Parte SOLO dopo che il BE risponde (attesa automatica).",
+    "cartella": "chat/",
     "host": "192.168.1.11",
     "port": 8501,
     "health": "/_stcore/health",
@@ -18,6 +27,9 @@
     }
   },
   "voice": {
+    "macchina": "VOICE",
+    "fa": "Avvia il codice in voice/ (pipeline VAD-STT-LLM-TTS + WebSocket :8003). Parte SOLO dopo che il BE risponde (attesa automatica).",
+    "cartella": "voice/",
     "host": "192.168.1.12",
     "port": 8003,
     "health": "/health",

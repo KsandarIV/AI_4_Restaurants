@@ -168,6 +168,38 @@ def firewall_hint(role: str, config: dict[str, object]) -> None:
         log(f"regola NON applicata ({exc}): eseguila a mano da admin.")
 
 
+def wait_for_be(timeout_s: int = 180) -> bool:
+    """Le macchine CHAT/VOICE attendono il BE (fulcro) prima di avviarsi.
+
+    Polla <BACKEND_BASE_URL>/.env ogni 2 s. Ritorna False su timeout/Ctrl+C.
+    """
+    from urllib.parse import urlparse
+
+    base = read_env().get("BACKEND_BASE_URL", "http://192.168.1.10:8000").rstrip("/")
+    host = urlparse(base).netloc or base
+    log(f"attendo il BE su {base} (accendi la macchina BE; Ctrl+C per saltare l'attesa)...")
+    deadline = time.monotonic() + timeout_s
+    attempt = 0
+    last_detail = ""
+    while time.monotonic() < deadline:
+        attempt += 1
+        for path in ("/api/health", "/health"):
+            status, detail = check_one("be", base, path, timeout=4)
+            last_detail = detail
+            if status == "OK":
+                log(f"BE raggiungibile ({detail}).")
+                return True
+        if attempt % 5 == 0:
+            log(f"BE non ancora su ({last_detail}). Riprovo... ({attempt * 2}s trascorsi)")
+        try:
+            time.sleep(2)
+        except KeyboardInterrupt:
+            log("attesa interrotta: avvio comunque (il componente riprovera' da solo).")
+            return True
+    log(f"TIMEOUT {timeout_s}s: BE non raggiungibile ({last_detail}).")
+    return False
+
+
 def start_component(role: str, config: dict[str, object]) -> int:
     """Avvia il componente in foreground con log live (Ctrl+C ferma)."""
     node = config[role]
@@ -252,6 +284,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--configure-only", action="store_true", help="solo .env, senza avviare")
     parser.add_argument("--status", action="store_true", help="ping HTTP alle 3 macchine ed esci")
     parser.add_argument("--write-launcher", action="store_true", help="crea AVVIA_<RUOLO>.bat ed esci")
+    parser.add_argument("--no-wait", action="store_true",
+                        help="chat/voice: non attendere il BE prima di avviare")
+    parser.add_argument("--wait-timeout", type=int, default=180,
+                        help="secondi max di attesa BE (default 180)")
     args = parser.parse_args(argv)
 
     config = load_config()
@@ -270,6 +306,10 @@ def main(argv: list[str] | None = None) -> int:
         firewall_hint(role, config)
         if args.configure_only:
             return 0
+    if role in ("chat", "voice") and not args.no_wait:
+        if not wait_for_be(timeout_s=args.wait_timeout):
+            log("BE assente: componente NON avviato. Accendi il BE e rilancia (o --no-wait).")
+            return 1
     return start_component(role, config)
 
 

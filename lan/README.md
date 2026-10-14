@@ -23,8 +23,12 @@ python lan\machine_setup.py --role voice --start   :: avvio diretto
 python lan\machine_setup.py --status               :: ping HTTP a be/chat/voice
 python lan\machine_setup.py --be-host 192.168.1.10 --configure-only
 python lan\machine_setup.py --write-launcher       :: crea AVVIA_<RUOLO>.bat
+python lan\machine_setup.py --role chat --no-wait --wait-timeout 60
 set LAN_ROLE=be  +  python lan\machine_setup.py    :: ruolo da variabile (lab/demo)
 ```
+
+Le macchine CHAT/VOICE **attendono il BE** (poll `/api/health` fino a 180 s) prima di
+avviarsi: il BE parte per primo e deve restare su. `--no-wait` salta l'attesa.
 
 ## Mappa (modificabile in `lan_config.json`, senza codice)
 
