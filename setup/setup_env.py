@@ -22,6 +22,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -43,8 +44,32 @@ PIPER_DIR = ROOT / "voice" / "models"
 ASSUME_YES = False
 
 
+TOTAL_STEPS = 5
+
+
 def log(msg: str) -> None:
     print(f"[setup] {msg}", flush=True)
+
+
+def header(n: int, title: str) -> None:
+    """Intestazione ben visibile di un passo (es. [2/5] Ambiente virtuale)."""
+    print(f"\n=== [{n}/{TOTAL_STEPS}] {title} ===", flush=True)
+
+
+def info(msg: str) -> None:
+    print(f"  ..  {msg}", flush=True)
+
+
+def good(msg: str) -> None:
+    print(f"  OK  {msg}", flush=True)
+
+
+def warn(msg: str) -> None:
+    print(f"  !!  {msg}", flush=True)
+
+
+def bad(msg: str) -> None:
+    print(f"  XX  {msg}", flush=True)
 
 
 def ask(question: str, default_yes: bool = True) -> bool:
@@ -53,7 +78,7 @@ def ask(question: str, default_yes: bool = True) -> bool:
         return True
     suffix = "[S/n]" if default_yes else "[s/N]"
     try:
-        answer = input(f"[setup] {question} {suffix} ").strip().lower()
+        answer = input(f"  ??  {question} {suffix} ").strip().lower()
     except EOFError:
         return default_yes
     if not answer:
@@ -76,31 +101,33 @@ def file_hash(path: Path) -> str:
 
 
 def step_python() -> bool:
-    log(
-        f"interprete: {sys.version.split()[0]} (richiesto >= {'.'.join(map(str, MIN_PY))})")
+    header(1, "Python")
+    info(f"versione trovata: {sys.version.split()[0]} (minimo richiesto: {'.'.join(map(str, MIN_PY))})")
     if sys.version_info < MIN_PY:
-        log("ERRORE: Python troppo vecchio, installa Python 3.11 o 3.12.")
+        bad("Python troppo vecchio: installa Python 3.11 o 3.12.")
         return False
-    if sys.version_info >= (3, 14):
-        log("AVVISO: Python 3.14, alcune ruote (onnxruntime/webrtcvad) potrebbero mancare: "
-            "in caso di errore usa Python 3.11.")
+    if sys.version_info >= (3, 13):
+        warn("Python 3.13+: alcuni pacchetti potrebbero non avere ancora i file "
+             "precompilati. Se l'installazione fallisce, usa Python 3.11 o 3.12.")
+    good("versione di Python adatta.")
     return True
 
 
 def step_venv() -> bool:
+    header(2, "Ambiente virtuale (.venv condiviso da BE, CHAT, VOICE)")
     py = venv_python()
     if py.exists():
-        log(f"venv esistente: {VENV_DIR}")
+        good(f"gia' presente: {VENV_DIR}")
         return True
-    if not ask(f"creo il venv condiviso in {VENV_DIR}?"):
-        log("venv saltato: i passi successivi useranno il Python corrente.")
+    if not ask(f"creo il venv in {VENV_DIR}?"):
+        warn("venv saltato: i passi successivi useranno il Python corrente.")
         return False
-    log("creazione venv in corso (puo' richiedere un minuto)...")
+    info("creazione in corso (puo' richiedere un minuto)...")
     code, out = run([sys.executable, "-m", "venv", str(VENV_DIR)], timeout=300)
     if code != 0 or not py.exists():
-        log(f"ERRORE creazione venv:\n{out}")
+        bad(f"creazione del venv fallita:\n{out}")
         return False
-    log("venv creato.")
+    good("venv creato.")
     return True
 
 
@@ -110,33 +137,66 @@ def target_python() -> str:
 
 
 def step_requirements(python: str) -> bool:
+    header(3, "Dipendenze Python (requirements.txt)")
     if not REQ_FILE.exists():
-        log(f"ERRORE: {REQ_FILE} non trovato.")
+        bad(f"{REQ_FILE} non trovato.")
         return False
-    if not ask(f"installo {REQ_FILE.name} con {python}?"):
+    if not ask(f"installo {REQ_FILE.name} nel venv?"):
+        warn("installazione dipendenze saltata.")
         return True
-    log("upgrade pip...")
+    info("aggiorno pip...")
     run([python, "-m", "pip", "install", "--upgrade", "pip"], timeout=300)
-    log("installazione dipendenze (puo' richiedere diversi minuti)...")
-    code, out = run([python, "-m", "pip", "install",
+    info("installo i pacchetti (puo' richiedere diversi minuti, nessun output fino alla fine)...")
+    start = time.time()
+    code, out = run([python, "-m", "pip", "install", "--progress-bar", "off",
                     "-r", str(REQ_FILE)], timeout=1800)
-    print(out[-3000:])
+    elapsed = int(time.time() - start)
     if code != 0:
-        log("ERRORE pip: vedi output sopra. Rilancia lo script dopo aver sistemato.")
+        print(_error_tail(out))
+        bad(f"installazione fallita dopo {elapsed}s.")
+        _pip_hint(out)
+        info("Sistema il problema e rilancia lo script: i passi gia' riusciti vengono saltati.")
         return False
-    log("dipendenze installate.")
+    installed = [ln for ln in out.splitlines() if ln.startswith("Successfully installed")]
+    n_new = len(installed[0].split()) - 2 if installed else 0
+    if n_new:
+        good(f"{n_new} pacchetti installati in {elapsed}s.")
+    else:
+        good(f"tutti i pacchetti erano gia' aggiornati ({elapsed}s).")
     # Pacchetti locali del repo (voice/be/chat) installati editable nel venv condiviso,
     # cosi' `python -m voicebot` funziona dalla root senza PYTHONPATH.
     for pkg in ("voice", "be", "chat"):
         proj = ROOT / pkg / "pyproject.toml"
         if proj.exists():
-            log(f"installazione editable ./{pkg} ...")
+            info(f"installo il progetto locale ./{pkg} (editable)...")
             code, out = run([python, "-m", "pip", "install",
                             "-e", str(proj.parent)], timeout=600)
             if code != 0:
-                log(
-                    f"AVVISO: editable install ./{pkg} fallita (non fatale):\n{out[-1000:]}")
+                warn(f"installazione di ./{pkg} fallita (non bloccante):\n{out[-1000:]}")
+            else:
+                good(f"./{pkg} installato.")
     return True
+
+
+def _error_tail(out: str) -> str:
+    """Solo la parte utile dell'output pip: righe 'error' e coda, non tutto il log."""
+    lines = out.splitlines()
+    key = [ln for ln in lines if "error" in ln.lower() or "ERROR" in ln]
+    return "\n".join(["--- dettaglio errore pip ---", *key[-8:], "----------------------------"])
+
+
+def _pip_hint(out: str) -> None:
+    """Spiega in italiano le cause piu' comuni dei fallimenti di pip."""
+    low = out.lower()
+    if "visual c++" in low or "microsoft c++ build tools" in low:
+        warn("Un pacchetto va compilato ma manca il compilatore C++ di Microsoft.")
+        info("Soluzione: usa Python 3.11/3.12 (hanno i file precompilati) oppure installa "
+             "'Build Tools per Visual Studio' (carico C++).")
+    elif "no matching distribution" in low or "could not find a version" in low:
+        warn("Nessuna versione di un pacchetto e' compatibile con questo Python.")
+        info("Soluzione: ricrea il venv con Python 3.11 o 3.12.")
+    elif "connection" in low or "timed out" in low or "network" in low:
+        warn("Problema di rete durante il download: controlla la connessione e riprova.")
 
 
 def ollama_bin() -> str | None:
@@ -144,51 +204,58 @@ def ollama_bin() -> str | None:
 
 
 def step_ollama() -> bool:
+    header(4, f"Ollama e modello linguistico locale ({OLLAMA_MODEL})")
     exe = ollama_bin()
     if exe is None:
-        log("ERRORE: 'ollama' non trovato nel PATH. Installalo da https://ollama.com/download e rilancia.")
+        bad("'ollama' non trovato nel PATH.")
+        info("Installalo da https://ollama.com/download e rilancia.")
         return False
     code, out = run([exe, "--version"])
-    log(f"ollama: {out.splitlines()[0] if out else 'ok'}")
+    good(f"Ollama installato ({out.splitlines()[0] if out else 'versione sconosciuta'}).")
     code, out = run([exe, "list"])
     if code != 0:
-        log("Ollama non risponde: avvialo (app Ollama o 'ollama serve') e rilancia. Dettaglio:")
+        bad("Ollama non risponde: avvia l'app Ollama (o 'ollama serve') e rilancia.")
         print(out[-1000:])
         return False
     if OLLAMA_MODEL in out:
-        log(f"modello {OLLAMA_MODEL} gia' presente.")
+        good(f"modello {OLLAMA_MODEL} gia' scaricato.")
         return True
-    if not ask(f"scarico il modello locale {OLLAMA_MODEL} (~7 GB)?"):
+    warn(f"il modello {OLLAMA_MODEL} non e' ancora scaricato.")
+    if not ask(f"scarico {OLLAMA_MODEL} (~7 GB, serve per il BE)?"):
+        warn("modello NON scaricato: il BE non potra' rispondere finche' non lo scarichi "
+             f"(oppure: 'ollama pull {OLLAMA_MODEL}'). Per ignorare questo passo: --skip-ollama.")
         return False
-    log(f"pull {OLLAMA_MODEL} in corso...")
+    info("download in corso (vedrai l'avanzamento di Ollama)...")
     proc = subprocess.run([exe, "pull", OLLAMA_MODEL])
     if proc.returncode != 0:
-        log(f"ERRORE pull {OLLAMA_MODEL}.")
+        bad(f"download di {OLLAMA_MODEL} fallito.")
         return False
-    log(f"modello {OLLAMA_MODEL} pronto.")
+    good(f"modello {OLLAMA_MODEL} pronto.")
     return True
 
 
 def step_piper() -> bool:
     onnx = PIPER_DIR / (PIPER_VOICE.split("/")[-1] + ".onnx")
     cfg = PIPER_DIR / (PIPER_VOICE.split("/")[-1] + ".onnx.json")
+    header(5, "Voce italiana Piper (sintesi vocale del VOICE)")
     if onnx.exists() and cfg.exists():
-        log(f"voce Piper gia' presente in {PIPER_DIR}.")
+        good(f"gia' presente in {PIPER_DIR}.")
         return True
     if not ask(f"scarico la voce Piper italiana in {PIPER_DIR} (~60 MB)?"):
+        warn("voce NON scaricata: il VOICE non potra' parlare. Per ignorare: --skip-piper.")
         return False
     PIPER_DIR.mkdir(parents=True, exist_ok=True)
     for url, dest in (
         (f"{PIPER_BASE}/{PIPER_VOICE}.onnx", onnx),
         (f"{PIPER_BASE}/{PIPER_VOICE}.onnx.json", cfg),
     ):
-        log(f"download {url} ...")
+        info(f"scarico {dest.name} ...")
         try:
             urllib.request.urlretrieve(url, dest)
         except Exception as exc:
-            log(f"ERRORE download: {exc}")
+            bad(f"download fallito: {exc}")
             return False
-    log("voce Piper pronta.")
+    good("voce Piper pronta.")
     return True
 
 
@@ -245,19 +312,30 @@ def main(argv: list[str] | None = None) -> int:
     if not step_venv():
         return 1
     python = target_python()
-    ok = True
-    if not args.skip_requirements:
-        ok = step_requirements(python) and ok
-    if not args.skip_ollama:
-        ok = step_ollama() and ok
-    if not args.skip_piper:
-        ok = step_piper() and ok
+    results: list[tuple[str, str]] = []  # (nome passo, esito)
+    for name, skip, fn in (
+        ("Dipendenze Python", args.skip_requirements, lambda: step_requirements(python)),
+        ("Ollama + modello", args.skip_ollama, step_ollama),
+        ("Voce Piper", args.skip_piper, step_piper),
+    ):
+        if skip:
+            results.append((name, "saltato (opzione --skip)"))
+        else:
+            results.append((name, "OK" if fn() else "DA SISTEMARE"))
+
+    ok = all(r != "DA SISTEMARE" for _, r in results)
+    print("\n=== RIEPILOGO ===")
+    for name, res in results:
+        mark = "XX" if res == "DA SISTEMARE" else ("OK" if res == "OK" else "--")
+        print(f"  {mark}  {name}: {res}")
+    print()
     if ok:
         write_state(python)
-        log("SETUP COMPLETATO. Usa il venv: "
-            f"{VENV_DIR}\\Scripts\\activate  oppure direttamente {venv_python()}")
+        log("SETUP COMPLETATO. Attiva il venv con: "
+            f"{VENV_DIR}\\Scripts\\activate")
     else:
-        log("SETUP INCOMPLETO: risolvi gli errori e rilancia (i passi gia' ok vengono saltati).")
+        log("SETUP INCOMPLETO: sistema i punti 'DA SISTEMARE' qui sopra e rilancia "
+            "(i passi gia' riusciti vengono saltati).")
     return 0 if ok else 1
 
 
