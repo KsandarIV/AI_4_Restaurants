@@ -76,12 +76,13 @@ def create_reservation(
             return f"Impossibile effettuare la prenotazione: {res['error']}"
 
 @tool
-def get_reservation(booking_code: str) -> str:
+def get_reservation(booking_code: str, customer_id: Optional[str] = None) -> str:
     """
     Cerca e recupera i dettagli di una prenotazione esistente tramite il codice univoco (es. 'RES-A1B2C3').
+    Il parametro customer_id è impostato automaticamente dal sistema: non chiederlo al cliente.
     """
     with SessionLocal() as db:
-        res = crud.get_reservation(db, booking_code)
+        res = crud.get_reservation(db, booking_code, customer_id=customer_id)
         if not res:
             return f"Nessuna prenotazione trovata con il codice {booking_code}. Verificare il codice inserito."
 
@@ -99,7 +100,8 @@ def modify_reservation(
     new_date: Optional[str] = None,
     new_time: Optional[str] = None,
     new_guests: Optional[int] = None,
-    new_requests: Optional[str] = None
+    new_requests: Optional[str] = None,
+    customer_id: Optional[str] = None
 ) -> str:
     """
     Modifica una prenotazione esistente (data, orario, numero di ospiti o richieste speciali).
@@ -109,6 +111,7 @@ def modify_reservation(
       - new_time: Nuovo orario facoltativo (HH:MM)
       - new_guests: Nuovo numero di persone facoltativo
       - new_requests: Nuove richieste o note speciali
+      - customer_id: impostato automaticamente dal sistema, non chiederlo al cliente
     """
     with SessionLocal() as db:
         res = crud.modify_reservation(
@@ -117,7 +120,8 @@ def modify_reservation(
             new_date=new_date,
             new_time=new_time,
             new_guests=new_guests,
-            new_requests=new_requests
+            new_requests=new_requests,
+            customer_id=customer_id
         )
         if res["success"]:
             return (
@@ -130,12 +134,13 @@ def modify_reservation(
             return f"Errore durante la modifica della prenotazione: {res['error']}"
 
 @tool
-def cancel_reservation(booking_code: str) -> str:
+def cancel_reservation(booking_code: str, customer_id: Optional[str] = None) -> str:
     """
     Cancella una prenotazione esistente tramite il codice di prenotazione (es. 'RES-XYZ789').
+    Il parametro customer_id è impostato automaticamente dal sistema: non chiederlo al cliente.
     """
     with SessionLocal() as db:
-        res = crud.cancel_reservation(db, booking_code)
+        res = crud.cancel_reservation(db, booking_code, customer_id=customer_id)
         if res["success"]:
             return f"La prenotazione con codice {booking_code} è stata cancellata correttamente. Il tavolo è stato liberato."
         else:

@@ -40,4 +40,10 @@ class Settings(BaseModel):
 
     RESERVATION_DURATION_MINUTES: int = 90
 
+    # Customer registration. CHAT/VOICE collect name and phone *before* the conversation and send
+    # them only to POST /api/customers; the LLM sees just the anonymous customer_id.
+    # When enabled: bookings need a registered customer, and only the customer who made a booking
+    # can read, modify or cancel it. Set to false to keep the legacy behaviour (e.g. until VOICE is adapted).
+    REQUIRE_CUSTOMER_REGISTRATION: bool = os.getenv("REQUIRE_CUSTOMER_REGISTRATION", "true").lower() in ("true", "1", "yes")
+
 settings = Settings()

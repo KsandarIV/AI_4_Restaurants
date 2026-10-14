@@ -13,6 +13,8 @@ from backend.graph.workflow import process_message
 from backend.api.schemas import (
     ChatRequest,
     ChatResponse,
+    CustomerCreateRequest,
+    CustomerResponse,
     DirectReservationCreateRequest,
     DirectReservationModifyRequest,
     ReservationResponse,
@@ -21,6 +23,17 @@ from backend.api.schemas import (
 )
 
 router = APIRouter()
+
+# -------------------------------------------------------------
+# Customer registration (called by CHAT and VOICE BEFORE the conversation)
+# -------------------------------------------------------------
+@router.post("/customers", response_model=CustomerResponse, summary="Registra il cliente (nome e telefono) e restituisce un customer_id anonimo")
+def create_customer_endpoint(request: CustomerCreateRequest, db: Session = Depends(get_db)):
+    """
+    Nome e telefono vengono salvati solo nella tabella `customers`. Il client usa poi il
+    `customer_id` restituito in /api/chat: l'LLM non vede mai i dati personali.
+    """
+    return CustomerResponse(**crud.create_customer(db, name=request.name, phone=request.phone))
 
 # -------------------------------------------------------------
 # Conversational AI Endpoint for CHAT and VOICE Bots
@@ -64,7 +77,7 @@ async def chat_stream_endpoint(request: Request):
     body = await request.json()
     message_text = ""
     session_id = body.get("session_id", "voice_stream_sess")
-    customer_id = body.get("customer_id") or body.get("name") or "anon_voice"
+    customer_id = body.get("customer_id") or "anon_voice"  # never body["name"]: a name is personal data
     client_type = body.get("client_type", "voice")
 
     if "messages" in body and isinstance(body["messages"], list):
@@ -122,8 +135,12 @@ def get_availability_endpoint(
     }
 
 @router.get("/reservations/{booking_code}", response_model=ReservationResponse, summary="Recupera stato prenotazione")
-def get_reservation_endpoint(booking_code: str, db: Session = Depends(get_db)):
-    res = crud.get_reservation(db, booking_code)
+def get_reservation_endpoint(
+    booking_code: str,
+    customer_id: Optional[str] = Query(None, description="Cliente che ha fatto la prenotazione (obbligatorio se la registrazione è attiva)"),
+    db: Session = Depends(get_db)
+):
+    res = crud.get_reservation(db, booking_code, customer_id=customer_id)
     if not res:
         raise HTTPException(status_code=404, detail=f"Prenotazione {booking_code} non trovata.")
     return ReservationResponse(success=True, **res)
@@ -134,7 +151,7 @@ def create_reservation_endpoint(request: DirectReservationCreateRequest, db: Ses
     if not num_guests:
         raise HTTPException(status_code=400, detail="Specificare il numero di persone ('guests' o 'party_size').")
 
-    cid = request.customer_id or request.name or "anon_client"
+    cid = request.customer_id or "anon_client"  # request.name is ignored on purpose (personal data)
 
     result = crud.create_reservation(
         db=db,
@@ -159,15 +176,20 @@ def modify_reservation_endpoint(booking_code: str, request: DirectReservationMod
         new_date=request.new_date,
         new_time=request.new_time,
         new_guests=new_g,
-        new_requests=request.new_requests
+        new_requests=request.new_requests,
+        customer_id=request.customer_id
     )
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Errore nella modifica della prenotazione."))
     return ReservationResponse(**result)
 
 @router.delete("/reservations/{booking_code}", response_model=ReservationResponse, summary="Cancella prenotazione")
-def cancel_reservation_endpoint(booking_code: str, db: Session = Depends(get_db)):
-    result = crud.cancel_reservation(db=db, booking_code=booking_code)
+def cancel_reservation_endpoint(
+    booking_code: str,
+    customer_id: Optional[str] = Query(None, description="Cliente che ha fatto la prenotazione (obbligatorio se la registrazione è attiva)"),
+    db: Session = Depends(get_db)
+):
+    result = crud.cancel_reservation(db=db, booking_code=booking_code, customer_id=customer_id)
     if not result.get("success"):
         raise HTTPException(status_code=404, detail=result.get("error", "Prenotazione non trovata."))
     return ReservationResponse(**result)

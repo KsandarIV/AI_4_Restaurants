@@ -13,6 +13,14 @@ def get_system_prompt(
     today = current_date_str or datetime.datetime.now().strftime("%Y-%m-%d")
     weekday_name = datetime.datetime.now().strftime("%A")
 
+    registration_note = ""
+    if settings.REQUIRE_CUSTOMER_REGISTRATION and customer_id.startswith("anon_"):
+        registration_note = (
+            "- ATTENZIONE: questo cliente NON è registrato (customer_id anonimo). Non può prenotare, modificare "
+            "né cancellare prenotazioni: se lo chiede, spiega con gentilezza che serve prima la registrazione di "
+            "nome e telefono. Nel frattempo puoi rispondere su menu e informazioni sul locale."
+        )
+
     if client_type == "voice":
         style_instructions = """
 MODALITÀ BOT VOCALE ATTIVA (SINTESI VOCALE TTS):
@@ -37,6 +45,7 @@ DATI SESSIONE CLIENTE (PRIVACY & PII):
 - Il cliente attuale è autenticato con customer_id: '{customer_id}'.
 - Quando invochi lo strumento `create_reservation`, DEVI SEMPRE passare questo esatto `customer_id`='{customer_id}'.
 - Non chiedere mai né raccogliere dati personali (cognomi, indirizzi di residenza o carte di credito). Il cliente è identificato solo dal customer_id e dal codice di prenotazione.
+{registration_note}
 
 ORARI E REGOLE DI BUSINESS:
 - Il ristorante è CHIUSO tutti i Lunedì.
