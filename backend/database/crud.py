@@ -2,10 +2,11 @@ import random
 import string
 import datetime
 import threading
+import uuid
 from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from backend.database.connection import engine, Base, SessionLocal
-from backend.database.models import RestaurantTable, Reservation, MenuItem, RestaurantInfo
+from backend.database.models import RestaurantTable, Reservation, MenuItem, RestaurantInfo, Customer
 from backend.database.seed_data import seed_database
 from backend.config import settings
 
@@ -17,6 +18,33 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         seed_database(db)
+
+def create_customer(db: Session, name: str, phone: str) -> Dict[str, Any]:
+    """Store a customer's contact data and return the anonymous customer_id clients must use from now on.
+
+    The returned dict deliberately contains only the token: name and phone never leave the database.
+    """
+    customer = Customer(
+        customer_id=f"cust_{uuid.uuid4().hex[:12]}",
+        name=name.strip(),
+        phone=phone.strip(),
+        consent_at=datetime.datetime.now(datetime.timezone.utc)
+    )
+    db.add(customer)
+    db.commit()
+    return {"customer_id": customer.customer_id}
+
+def is_registered_customer(db: Session, customer_id: Optional[str]) -> bool:
+    """True if customer_id belongs to a customer registered through create_customer."""
+    if not customer_id:
+        return False
+    return db.query(Customer.id).filter(Customer.customer_id == customer_id.strip()).first() is not None
+
+def _can_access(reservation: Reservation, customer_id: Optional[str]) -> bool:
+    """With registration enabled, only the customer who made a booking can read, modify or cancel it."""
+    if not settings.REQUIRE_CUSTOMER_REGISTRATION:
+        return True
+    return bool(customer_id) and reservation.customer_id == customer_id.strip()
 
 def generate_booking_code() -> str:
     """Generate a readable, unique reservation code e.g. RES-9A8B2C."""
@@ -193,6 +221,13 @@ def create_reservation(
     # Clean customer_id
     cid = (customer_id or "anon_client").strip()
 
+    # 4. The customer must have registered name and phone first (the LLM only ever sees the token)
+    if settings.REQUIRE_CUSTOMER_REGISTRATION and not is_registered_customer(db, cid):
+        return {
+            "success": False,
+            "error": "Per prenotare serve prima la registrazione del nome e del numero di telefono."
+        }
+
     # Thread-safe table allocation
     with table_lock:
         available_tables = get_available_tables(
@@ -255,13 +290,14 @@ def create_reservation(
             "special_requests": reservation.special_requests
         }
 
-def get_reservation(db: Session, booking_code: str) -> Optional[Dict[str, Any]]:
-    """Retrieve reservation details by booking code."""
+def get_reservation(db: Session, booking_code: str, customer_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Retrieve reservation details by booking code (None if not found or not owned by customer_id)."""
     res = db.query(Reservation).filter(
         Reservation.booking_code == booking_code.strip().upper()
     ).first()
 
-    if not res:
+    # Same answer for "does not exist" and "belongs to someone else": codes must not be guessable
+    if not res or not _can_access(res, customer_id):
         return None
 
     table_num = res.table.table_number if res.table else None
@@ -288,7 +324,8 @@ def modify_reservation(
     new_date: Optional[str] = None,
     new_time: Optional[str] = None,
     new_guests: Optional[int] = None,
-    new_requests: Optional[str] = None
+    new_requests: Optional[str] = None,
+    customer_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Modify an existing reservation with validations and thread-safe table re-check."""
     with table_lock:
@@ -296,7 +333,7 @@ def modify_reservation(
             Reservation.booking_code == booking_code.strip().upper()
         ).first()
 
-        if not res:
+        if not res or not _can_access(res, customer_id):
             return {"success": False, "error": f"Prenotazione con codice {booking_code} non trovata."}
 
         if res.status == "CANCELLED":
@@ -364,14 +401,14 @@ def modify_reservation(
             "special_requests": res.special_requests
         }
 
-def cancel_reservation(db: Session, booking_code: str) -> Dict[str, Any]:
+def cancel_reservation(db: Session, booking_code: str, customer_id: Optional[str] = None) -> Dict[str, Any]:
     """Cancel an existing reservation."""
     with table_lock:
         res = db.query(Reservation).filter(
             Reservation.booking_code == booking_code.strip().upper()
         ).first()
 
-        if not res:
+        if not res or not _can_access(res, customer_id):
             return {"success": False, "error": f"Prenotazione con codice {booking_code} non trovata."}
 
         if res.status == "CANCELLED":

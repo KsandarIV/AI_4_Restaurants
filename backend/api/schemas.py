@@ -1,5 +1,28 @@
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+class CustomerCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120, description="Nome (e cognome) del cliente")
+    phone: str = Field(..., pattern=r"^\+[1-9]\d{7,14}$", description="Telefono in formato internazionale E.164, es. +393331234567")
+    consent: bool = Field(..., description="Il cliente ha accettato l'uso dei dati per gestire la prenotazione (deve essere true)")
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Il nome non può essere vuoto.")
+        return v
+
+    @field_validator("consent")
+    @classmethod
+    def consent_given(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError("Serve il consenso al trattamento dei dati.")
+        return v
+
+class CustomerResponse(BaseModel):
+    customer_id: str = Field(..., description="Identificativo anonimo da usare in tutte le chiamate successive")
 
 class ChatRequest(BaseModel):
     message: str = Field(..., description="Messaggio dell'utente inviato dal bot chat o voice (pre-processato per rimuovere PII)")
@@ -20,7 +43,7 @@ class DirectReservationCreateRequest(BaseModel):
     guests: Optional[int] = Field(None, ge=1, le=20, description="Numero di ospiti")
     party_size: Optional[int] = Field(None, ge=1, le=20, description="Alias per guests")
     customer_id: Optional[str] = Field(default="anon_client", description="Token cliente anonimo")
-    name: Optional[str] = Field(None, description="Alias per customer_id")
+    name: Optional[str] = Field(None, description="DEPRECATO e ignorato: un nome non è mai usato come customer_id (dato personale). Registrare il cliente con POST /api/customers.")
     special_requests: Optional[str] = Field(None, description="Note o richieste speciali")
     preferred_location: Optional[str] = Field(None, description="interno, terrazza, giardino")
 
@@ -30,6 +53,7 @@ class DirectReservationModifyRequest(BaseModel):
     new_guests: Optional[int] = Field(None, ge=1, le=20, description="Nuovo numero di ospiti")
     party_size: Optional[int] = Field(None, ge=1, le=20, description="Alias per new_guests")
     new_requests: Optional[str] = Field(None, description="Nuove note speciali")
+    customer_id: Optional[str] = Field(None, description="Cliente che ha fatto la prenotazione (obbligatorio se la registrazione è attiva)")
 
 class ReservationResponse(BaseModel):
     success: bool
