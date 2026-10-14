@@ -223,3 +223,14 @@ __marimo__/
 .env
 *.db
 backend/restaurant.db
+
+# Local model weights (scaricati da setup_env.py, mai in git)
+*.onnx
+*.onnx.json
+voice/models/
+*.pt
+*.bin
+*.gguf
+
+# Test caches
+.pytest_cache/

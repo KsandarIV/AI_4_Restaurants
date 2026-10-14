@@ -1,7 +1,7 @@
 """Hook chiamato all'avvio di ciascuna pipeline (BE / CHAT / VOICE).
 
 Uso (3 righe all'inizio del main di ogni componente):
-    from env_check import ensure_environment  # sys.path deve includere tools/env_setup
+    from env_check import ensure_environment  # sys.path deve includere setup/
     if not ensure_environment():
         raise SystemExit(3)  # setup eseguito o rifiutato: riavvia dopo il setup
 
@@ -43,5 +43,5 @@ def ensure_environment(interactive: bool | None = None) -> bool:
         log("setup completato: RIAVVIA il componente per usare il venv aggiornato.")
         return False
     log("ambiente non configurato e sessione non interattiva: "
-        "lancia 'python tools\\env_setup\\setup_env.py' e riavvia.")
+        "lancia 'python setup\\setup_env.py' e riavvia.")
     return False

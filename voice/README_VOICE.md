@@ -7,10 +7,7 @@ Tutti i modelli girano in **locale**; il BE (macchina separata in LAN, con LLM +
 
 ```
 voice/
-├── Dockerfile                  # multi-stage build (builder → runtime slim, user non-root, HEALTHCHECK)
-├── .env.example                # tutte le variabili d'ambiente
-├── pyproject.toml              # dipendenze + extra local-models/dev, config mypy/ruff/pytest
-├── voice.py                    # shim storico → re-export del package
+├── pyproject.toml              # packaging per editable install + config pytest/mypy/ruff
 ├── src/voicebot/
 │   ├── __main__.py             # entrypoint uvicorn (graceful shutdown)
 │   ├── config.py               # Settings pydantic (env/BACKEND_*, VAD/STT/TTS, code)
@@ -40,20 +37,23 @@ voice/
 - **Barge-in:** contatore `_gen` invalida il turno corrente, svuota `audio_out_q`, `vad.reset()`, invia `{"event":"barge_in"}`.
 - **Shutdown:** `close()` invia poison-pill `None`, cancella i task, `await ... timeout=5s`, chiude STT/TTS/BE.
 
-## Contratto BE atteso (base configurabile `BACKEND_BASE_URL`)
+## Contratto BE reale (da `backend/api/routes.py`, mount `/api` + root)
 
 | Metodo | Path | Uso |
 |---|---|---|
-| GET | `/health` | readiness |
-| GET | `/api/menu` | caso d'uso 4 |
-| GET | `/api/info` | caso d'uso 5 (posizione/contatti) |
+| GET | `/health`, `/api/health` | readiness |
+| POST | `/api/chat` | chat sincrona `{message, session_id, customer_id, client_type}` |
+| POST | `/api/chat/stream` | SSE `data: {"token"}` … `data: [DONE]` (parola-a-parola dopo inferenza completa) |
 | GET | `/api/availability?date&time&party_size` | verifica disponibilità |
 | POST | `/api/reservations` | prenota (caso 1) |
-| PUT | `/api/reservations/{id}` | modifica (caso 2) |
-| DELETE | `/api/reservations/{id}` | cancella (caso 3) |
-| POST | `{BACKEND_CHAT_STREAM_PATH}` | chat SSE `data: {"token": "..."}` … `data: [DONE]` |
+| GET | `/api/reservations/{booking_code}` | stato prenotazione |
+| PATCH/PUT | `/api/reservations/{booking_code}` | modifica (caso 2) |
+| DELETE | `/api/reservations/{booking_code}` | cancella (caso 3) |
+| GET | `/api/menu` | caso d'uso 4 (filtri categoria/allergeni/diete) |
+| GET | `/api/info[?key=]` | caso d'uso 5 (posizione/contatti) |
 
-Se il BE del membro 1 usa path diversi, basta cambiare le variabili `.env` / il `BackendClient`.
+Il `BackendClient` invia `session_id`/`customer_id` anonimo/`client_type="voice"` sullo
+stream così la memoria LangGraph del BE funziona tra i turni. Porta BE di default: **8000**.
 
 ## Protocollo WebSocket `/ws/voice`
 
@@ -61,29 +61,26 @@ Se il BE del membro 1 usa path diversi, basta cambiare le variabili `.env` / il 
 - Server→client: frame binari PCM16 (risposta) · `{"event":"ready"}` · `{"event":"barge_in"}`
 - Riconnessione: lato client con backoff esponenziale (il server è stateless per connessione).
 
-## Avvio locale
+## Avvio locale (venv condiviso)
 
-```bash
-cd voice
-cp .env.example .env        # poi imposta BACKEND_BASE_URL con l'IP LAN del BE
-pip install -e ".[local-models]"
-# pesi locali: scarica faster-whisper (auto) + voce Piper in models/
-python -m voicebot          # ws://localhost:8003/ws/voice
+```bat
+REM dalla root del repo, prima volta: setup guidato (venv + modelli locali)
+python setup\setup_env.py
+copy .env.example .env
+REM poi imposta BACKEND_BASE_URL con l'IP LAN del BE
+
+REM avvio voice con il venv condiviso (dalla root)
+.venv\Scripts\python -m voicebot   # ws://localhost:8003/ws/voice
 ```
 
-Senza modelli (CI/demo): `STT_BACKEND=fake TTS_BACKEND=fake python -m voicebot`.
-
-## Docker
-
-```bash
-docker build -t voicebot:1.0 ./voice
-docker run -p 8003:8003 --env-file ./voice/.env -v ./voice/models:/app/models voicebot:1.0
-```
+Senza modelli (CI/demo): `STT_BACKEND=fake TTS_BACKEND=fake` nel `.env`.
+Il `.env` è unico in root (`config.find_env_file` lo cerca anche lanciando da `voice/`).
 
 ## Test
 
-```bash
-cd voice && PYTHONPATH=src pytest tests -q   # 7 test, nessun modello/rete richiesto
+```bat
+REM dalla cartella voice, con il venv condiviso
+..\.venv\Scripts\python -m pytest tests -q   # 7 test, nessun modello/rete richiesto
 ```
 
 ## Vincoli traccia — dove sono rispettati

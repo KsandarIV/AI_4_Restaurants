@@ -5,8 +5,29 @@ Tutti i modelli girano in locale; il BE e' raggiunto solo via LAN.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def find_env_file() -> str | None:
+    """Cerca il .env unico di progetto: cwd -> root repo -> cartella voice/.
+
+    Ordine voluto: chi lancia dalla root usa ``<root>/.env``; chi lancia da
+    ``voice/`` (legacy) continua a funzionare senza modifiche.
+    """
+    here = Path.cwd()
+    candidates = [
+        here / ".env",
+        here / "voice" / ".env",
+        Path(__file__).resolve().parents[3] / ".env",  # .../AI_4_Restaurants/.env
+        Path(__file__).resolve().parents[2] / ".env",  # .../voice/.env (legacy)
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return None
 
 
 class Settings(BaseSettings):
@@ -16,7 +37,7 @@ class Settings(BaseSettings):
 
     voice_host: str = Field(default="0.0.0.0")
     voice_port: int = Field(default=8003)
-    backend_base_url: str = Field(default="http://192.168.1.10:8001")
+    backend_base_url: str = Field(default="http://192.168.1.10:8000")
     backend_timeout_s: float = Field(default=15.0)
     backend_api_key: str = Field(default="")
     backend_chat_stream_path: str = Field(default="/api/chat/stream")
@@ -46,7 +67,7 @@ class Settings(BaseSettings):
     llm_token_timeout_s: float = Field(default=30.0)
 
     tts_backend: str = Field(default="piper")
-    piper_model_path: str = Field(default="models/it_IT-riccardo-x_low.onnx")
+    piper_model_path: str = Field(default="voice/models/it_IT-riccardo-x_low.onnx")
     piper_config_path: str = Field(default="")
     tts_sample_rate: int = Field(default=22050)
 
@@ -58,5 +79,8 @@ class Settings(BaseSettings):
 
 
 def get_settings() -> Settings:
-    """Return a fresh Settings instance (cheap, reads env)."""
+    """Return a fresh Settings instance (cheap, reads env + unico .env di root)."""
+    env_file = find_env_file()
+    if env_file is not None:
+        return Settings(_env_file=env_file)
     return Settings()

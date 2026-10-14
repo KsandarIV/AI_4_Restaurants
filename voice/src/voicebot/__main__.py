@@ -12,10 +12,10 @@ from .logging_json import setup_logging
 
 
 def _ensure_shared_env() -> bool:
-    """Check del venv condiviso via tools/env_setup (best-effort, mai fatale qui)."""
+    """Check del venv condiviso via setup/ (best-effort, mai fatale qui)."""
     try:
         root = Path(__file__).resolve().parents[3]  # .../AI_4_Restaurants
-        setup_dir = root / "tools" / "env_setup"
+        setup_dir = root / "setup"
         if not setup_dir.is_dir():
             return True  # layout diverso (es. solo voice): nessun check
         sys.path.insert(0, str(setup_dir))

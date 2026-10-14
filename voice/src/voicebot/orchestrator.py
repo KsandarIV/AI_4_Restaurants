@@ -1,18 +1,24 @@
 """LLM orchestrator: dialogue state + BE function-calling + token streaming.
 
-The heavy LLM lives on the BE (local model, e.g. Ollama). This orchestrator:
-  1. keeps short dialogue history,
+The heavy LLM lives on the BE (local model via Ollama, LangGraph agent).
+This orchestrator:
+  1. keeps short dialogue history + a stable BE session/customer pair (memory),
   2. detects reservation intents locally (regex, no network),
   3. calls BE tools (availability/reserve/modify/cancel/menu/info) directly for
      low latency, and
-  4. otherwise streams the reply token-by-token from the BE chat endpoint so
+  4. otherwise streams the reply word-by-word from the BE chat endpoint so
      the TTS can start speaking before the turn is complete.
+
+NOTE on latency: the BE runs the full LangGraph inference BEFORE streaming
+(routes.py streams word-by-word with 30 ms pacing), so the first token costs
+a full turn. The pipeline still overlaps TTS synthesis with the word stream.
 """
 
 from __future__ import annotations
 
 import asyncio
 import re
+import uuid
 from typing import AsyncIterator
 
 from .backend import BackendClient
@@ -44,6 +50,8 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         self._system = system_prompt
         self._max_history = max_history
         self._token_timeout = token_timeout_s
+        self.session_id = f"voice_{uuid.uuid4().hex[:8]}"
+        self.customer_id = f"anon_{uuid.uuid4().hex[:8]}"
         self.history: list[ChatMessage] = [ChatMessage(role="system", content=system_prompt)]
 
     def reset(self) -> None:
@@ -75,7 +83,12 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         full: list[str] = []
         try:
             async def _gen() -> AsyncIterator[str]:
-                async for tok in self._backend.stream_chat(messages, timeout_s=self._token_timeout):
+                async for tok in self._backend.stream_chat(
+                    messages,
+                    timeout_s=self._token_timeout,
+                    session_id=self.session_id,
+                    customer_id=self.customer_id,
+                ):
                     yield tok
 
             gen = _gen()
