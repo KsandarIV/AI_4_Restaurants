@@ -16,7 +16,7 @@ numpy>=1.26
 faster-whisper>=1.0
 piper-tts>=1.2
 onnxruntime>=1.18
-webrtcvad>=2.0
+webrtcvad>=2.0  # OPZIONALE (setup lo salta se manca il compilatore C++; default: EnergyVAD)
 
 # --- BE (membro 1: LangGraph + Ollama locale + SQLite) ---
 langchain>=0.3.0

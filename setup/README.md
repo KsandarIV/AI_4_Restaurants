@@ -18,6 +18,9 @@ python setup\setup_env.py --check-only
 
 Salta singoli passi: `--skip-requirements --skip-ollama --skip-piper`.
 Variabile d'emergenza: `VOICE_SETUP_SKIP=1` salta il check all'avvio.
+Pacchetti marcati OPZIONALI in `requirements.txt` (es. `webrtcvad`, che richiede
+MSVC per compilare): se falliscono, il setup continua con warning e li elenca
+nel riepilogo + in `.venv/.setup_state.json`.
 
 ## Hook nelle 3 pipeline
 
