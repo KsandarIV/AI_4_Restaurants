@@ -234,3 +234,7 @@ voice/models/
 
 # Test caches
 .pytest_cache/
+
+# Per-machine LAN role (scelto al primo avvio su ogni macchina, mai in git)
+lan/role.local.json
+AVVIA_*.bat

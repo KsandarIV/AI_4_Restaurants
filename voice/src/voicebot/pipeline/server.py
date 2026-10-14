@@ -17,7 +17,7 @@ import json
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..backend import BackendClient
 from ..config import Settings, get_settings
@@ -40,6 +40,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/tech", response_class=HTMLResponse, include_in_schema=False)
+    async def tech_page() -> str:
+        """Scheda tecnica stampabile (dossier cliente): http://localhost:8003/tech."""
+        from pathlib import Path
+
+        return (Path(__file__).with_name("tech.html")).read_text(encoding="utf-8")
 
     @app.get("/ready")
     async def ready() -> Any:

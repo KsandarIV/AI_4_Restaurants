@@ -27,10 +27,11 @@ sqlalchemy>=2.0.0
 python-dotenv>=1.0.0
 typing-extensions>=4.8.0
 
-# --- CHAT (membro 2: anonimizzatore + NER locale) ---
+# --- CHAT (membro 2: UI + anonimizzatore + NER locale) ---
+streamlit>=1.30
+requests>=2.31
 spacy>=3.7
 # + modello NER (non via pip): python -m spacy download it_core_news_md
-# streamlit  # decommentare se la UI chat usa Streamlit
 
 # --- Test ---
 pytest>=8.0.0

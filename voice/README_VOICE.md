@@ -80,8 +80,26 @@ Il `.env` è unico in root (`config.find_env_file` lo cerca anche lanciando da `
 
 ```bat
 REM dalla cartella voice, con il venv condiviso
-..\.venv\Scripts\python -m pytest tests -q   # 7 test, nessun modello/rete richiesto
+..\.venv\Scripts\python -m pytest tests -q   # 13 test, nessun modello/rete richiesto
 ```
+
+Due modalità, come da architettura (mai import di codice BE: solo HTTP):
+
+- **Offline (codice in cartella):** `tests/stub_be.py` imita il contratto reale del BE
+  (`/api/chat/stream` SSE, availability, CRUD prenotazioni per `booking_code`, menu, info).
+  `test_integration_be.py` ci fa girare contro il VERO `BackendClient` + `BackendOrchestrator`:
+  così testi Voice senza la macchina del collega. Avvio manuale dello stub:
+  `..\.venv\Scripts\python tests/stub_be.py` (http://localhost:8000), poi punta
+  `BACKEND_BASE_URL=http://localhost:8000` nel `.env`.
+- **LAN (macchine vere):** nel `.env` metti `BACKEND_BASE_URL=http://<IP-BE>:8000`,
+  avvia `python -m voicebot` e parla al WebSocket `ws://<IP-VOICE>:8003/ws/voice`
+  (frame PCM16LE 16 kHz). Verifica prima `GET http://<IP-BE>:8000/api/health` dal browser.
+
+### Cosa chiedere al collega BE prima del test LAN
+1. IP LAN della sua macchina + conferma che il BE ascolta su `0.0.0.0:8000` (non `localhost`).
+2. `ollama serve` attivo e modello `gemma4:12b` scaricato (`ollama list`).
+3. Firewall Windows: porta **8000 in ingresso** aperta (e 8003 sulla tua per il WS).
+4. Un giro di prova con `client_demo.py http://<IP-BE>:8000` dalla tua macchina.
 
 ## Vincoli traccia — dove sono rispettati
 

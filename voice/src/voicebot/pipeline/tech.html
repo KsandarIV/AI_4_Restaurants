@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice-bot — Scheda tecnica (Traccia 3)</title>
+<style>
+  :root { --ink:#1a1a1a; --mut:#555; --acc:#0b5cad; --bg:#fff; --box:#f4f6f8; }
+  body { font-family: Segoe UI, Arial, sans-serif; color:var(--ink); margin:0; background:var(--bg); }
+  header { background:var(--ink); color:#fff; padding:20px 28px; }
+  header h1 { margin:0 0 4px; font-size:22px; } header p { margin:0; color:#ccc; font-size:13px; }
+  main { max-width:960px; margin:0 auto; padding:20px 28px 60px; }
+  h2 { color:var(--acc); border-bottom:2px solid var(--acc); padding-bottom:4px; margin-top:34px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; margin:10px 0; }
+  th,td { border:1px solid #ccc; padding:6px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--box); }
+  code { background:var(--box); padding:1px 5px; border-radius:4px; font-size:13px; }
+  pre { background:var(--box); padding:12px; border-radius:6px; overflow-x:auto; font-size:12.5px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .card { background:var(--box); border-radius:8px; padding:12px 16px; }
+  .card h3 { margin:6px 0; } .mut { color:var(--mut); font-size:13px; }
+  .toolbar { position:sticky; top:0; background:#fff; padding:10px 0; border-bottom:1px solid #ddd; }
+  button { background:var(--acc); color:#fff; border:0; border-radius:6px; padding:8px 16px; cursor:pointer; }
+  svg { width:100%; height:auto; background:var(--box); border-radius:8px; }
+  @media print { .toolbar { display:none; } main { max-width:none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Voice-bot ristorante — Scheda tecnica</h1>
+  <p>Traccia 3 · membro VOICE · pipeline audio real-time asyncio · modelli 100% locali · solo HTTP verso il BE</p>
+</header>
+<div class="toolbar"><main style="padding:0 28px">
+  <button onclick="window.print()">Stampa / Salva PDF</button>
+  <span class="mut">Chrome/Edge → Stampa → "Salva come PDF" per il dossier cliente.</span>
+</main></div>
+<main>
+  <h2>1 · Flusso del codice (core loop)</h2>
+  <svg viewBox="0 0 940 170" role="img" aria-label="pipeline">
+    <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#0b5cad"/></marker></defs>
+    <g font-size="12" text-anchor="middle">
+      <rect x="8" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="68" y="80">WS reader</text><text x="68" y="96" fill="#555">PCM 16kHz</text>
+      <rect x="148" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="208" y="80">VAD</text><text x="208" y="96" fill="#555">Energy/webrtc</text>
+      <rect x="288" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="348" y="80">STT</text><text x="348" y="96" fill="#555">Whisper loc.</text>
+      <rect x="428" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="488" y="80">LLM (BE)</text><text x="488" y="96" fill="#555">token stream</text>
+      <rect x="568" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="628" y="80">TTS</text><text x="628" y="96" fill="#555">Piper loc.</text>
+      <rect x="708" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="768" y="80">WS writer</text><text x="768" y="96" fill="#555">PCM out</text>
+      <rect x="848" y="55" width="84" height="60" rx="8" fill="#ffe9e9" stroke="#c00" stroke-width="2"/><text x="890" y="80">barge-in</text><text x="890" y="96" fill="#555">cancella</text>
+    </g>
+    <g stroke="#0b5cad" stroke-width="2">
+      <line x1="128" y1="85" x2="146" y2="85" marker-end="url(#a)"/><line x1="268" y1="85" x2="286" y2="85" marker-end="url(#a)"/><line x1="408" y1="85" x2="426" y2="85" marker-end="url(#a)"/><line x1="548" y1="85" x2="566" y2="85" marker-end="url(#a)"/><line x1="688" y1="85" x2="706" y2="85" marker-end="url(#a)"/>
+    </g>
+    <text x="470" y="145" font-size="12" fill="#555" text-anchor="middle">code asyncio.Queue bounded (backpressure) · task VAD/STT/LLM · generazione anti-race sul barge-in · PII scrub prima di ogni invio al BE</text>
+  </svg>
+  <h2>2 · Modelli e dipendenze</h2>
+  <div class="grid">
+    <div class="card"><h3>Modelli (locali)</h3>
+      <p>LLM <code>gemma4:12b</code> via Ollama (macchina BE) · STT faster-whisper <code>tiny</code> ·
+      TTS Piper <code>it_IT-riccardo-x_low</code> (<code>voice/models/</code>) · VAD Energy default.</p></div>
+    <div class="card"><h3>Dipendenze</h3>
+      <p class="mut">Unificate in <code>setup/requirements.txt</code>: fastapi, uvicorn, httpx, pydantic,
+      numpy, faster-whisper, piper-tts, onnxruntime (+ BE: langchain/langgraph/sqlalchemy · CHAT: streamlit/spacy).</p></div>
+  </div>
+  <h2>3 · Logica chiave</h2>
+  <table>
+    <tr><th>Aspetto</th><th>Scelta</th></tr>
+    <tr><td>Latenza</td><td>Token LLM → TTS in overlap; sintesi per-frase; shortcut tool senza giro LLM</td></tr>
+    <tr><td>Interruzione</td><td>Barge-in: nuova voce invalida turno, svuota coda audio, notifica client</td></tr>
+    <tr><td>Resilienza</td><td>Retry/backoff HTTP, timeout ovunque, code bounded, setup auto-riparante, graceful shutdown</td></tr>
+    <tr><td>Privacy</td><td>Scrub PII lato Voice prima dell'invio; <code>customer_id</code> anonimo verso il BE</td></tr>
+    <tr><td>Contratto BE</td><td><code>POST /api/chat/stream</code> (SSE), availability, CRUD <code>/api/reservations/{booking_code}</code>, <code>/api/menu</code>, <code>/api/info</code></td></tr>
+  </table>
+  <h2>4 · Punti di forza / deboli</h2>
+  <div class="grid">
+    <div class="card"><h3>Forza</h3><p>Voce naturale interrompibile · on-premise (zero costi API, dati in casa) ·
+    resiliente e auto-installante · testabile senza rete (stub BE + 13 test).</p></div>
+    <div class="card"><h3>Deboli e mitigazioni</h3><p>Primo token lento (inferenza BE completa → mitigato con shortcut) ·
+    STT tiny su CPU (upgrade con GPU) · nessuna auth su WS/BE (solo LAN demo; token in produzione).</p></div>
+  </div>
+  <h2>5 · Esercizio e test</h2>
+  <pre>python setup\setup_env.py
+copy .env.example .env        # BACKEND_BASE_URL=http://&lt;IP-BE&gt;:8000
+.venv\Scripts\python -m voicebot
+WS: ws://localhost:8003/ws/voice · Health: /health · Questa pagina: /tech
+Test offline: python -m pytest voice/tests -q   (stub BE, 13 test)
+Test LAN: puntare BACKEND_BASE_URL all'IP del BE (porta 8000 aperta).</pre>
+  <p class="mut">Documento completo: <code>voice/documentazione.md</code> · Contratto BE: <code>backend/api/routes.py</code></p>
+</main>
+</body>
+</html>

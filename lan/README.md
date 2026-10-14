@@ -1,0 +1,42 @@
+# lan — setup e avvio delle 3 macchine (Windows, Python puro, solo stdlib)
+
+Stesso script su tutte le macchine: riconosce il proprio ruolo e avvia il componente giusto.
+
+## Primo giro su ogni macchina
+
+```bat
+git pull
+python lan\machine_setup.py
+```
+
+1. chiede il ruolo (be/chat/voice) una sola volta → salvato in `lan/role.local.json`
+   (file locale, **non** committato);
+2. riusa `setup/` (crea `.venv` + modelli se mancano);
+3. chiede l'IP LAN del BE → scrive il `.env` di quella macchina;
+4. mostra/applica la regola firewall per la sua porta;
+5. avvia il componente in foreground (log live, `Ctrl+C` per fermare).
+
+Comandi utili:
+
+```bat
+python lan\machine_setup.py --role voice --start   :: avvio diretto
+python lan\machine_setup.py --status               :: ping HTTP a be/chat/voice
+python lan\machine_setup.py --be-host 192.168.1.10 --configure-only
+python lan\machine_setup.py --write-launcher       :: crea AVVIA_<RUOLO>.bat
+set LAN_ROLE=be  +  python lan\machine_setup.py    :: ruolo da variabile (lab/demo)
+```
+
+## Mappa (modificabile in `lan_config.json`, senza codice)
+
+| ruolo | porta | health | avvio |
+|---|---|---|---|
+| be | 8000 | `/api/health` | `python -m backend.main` |
+| chat | 8501 | `/_stcore/health` | `streamlit run chat/app.py` (+`BE_URL` all'IP BE) |
+| voice | 8003 | `/health` | `python -m voicebot` (+WS `/ws/voice`) |
+
+## Prerequisiti rete (una tantum)
+
+- Stessa LAN/Wi-Fi; IP possibilmente statici o DHCP riservati.
+- BE in ascolto su `0.0.0.0` (già così in `backend/main.py` e `voicebot`).
+- Firewall: porte **8000/8501/8003 TCP in ingresso** (lo script stampa i comandi `netsh`).
+- Sul BE: `ollama serve` + `ollama list` con `gemma4:12b`.

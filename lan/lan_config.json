@@ -1,0 +1,28 @@
+{
+  "_commento": "Mappa della LAN: chi e' chi e come si avvia. IP modificabili senza toccare codice.",
+  "be": {
+    "host": "192.168.1.10",
+    "port": 8000,
+    "health": "/api/health",
+    "start": { "cwd": ".", "argv": [".venv/Scripts/python.exe", "-m", "backend.main"] }
+  },
+  "chat": {
+    "host": "192.168.1.11",
+    "port": 8501,
+    "health": "/_stcore/health",
+    "start": {
+      "cwd": ".",
+      "argv": [".venv/Scripts/python.exe", "-m", "streamlit", "run", "chat/app.py",
+               "--server.address", "0.0.0.0", "--server.port", "8501"],
+      "env": { "BE_URL": "http://192.168.1.10:8000" }
+    }
+  },
+  "voice": {
+    "host": "192.168.1.12",
+    "port": 8003,
+    "health": "/health",
+    "ws": "/ws/voice",
+    "start": { "cwd": ".", "argv": [".venv/Scripts/python.exe", "-m", "voicebot"] }
+  },
+  "ollama_model": "gemma4:12b"
+}
