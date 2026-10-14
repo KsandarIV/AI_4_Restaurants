@@ -14,12 +14,13 @@ def check_availability(date: str, time: str, guests: int, location: Optional[str
       - location: Preferenza sala ('interno', 'terrazza', 'giardino', facoltativo)
     """
     with SessionLocal() as db:
-        if not crud.is_restaurant_open_on_date(date):
-            return "Il ristorante è chiuso di Lunedì. Si prega di scegliere un altro giorno (dal Martedì alla Domenica)."
+        date_ok, date_err, _ = crud.validate_date(date)
+        if not date_ok:
+            return date_err
 
-        shift = crud.determine_shift(time)
-        if shift == "fuori_orario":
-            return f"Orario {time} fuori servizio. Pranzo: 12:00-15:00, Cena: 19:00-23:30."
+        time_ok, time_err, shift = crud.validate_time_and_shift(time)
+        if not time_ok:
+            return time_err
 
         tables = crud.get_available_tables(
             db=db,

@@ -167,13 +167,21 @@ class MockChatModel(BaseChatModel):
                     guests = int(word)
                     break
 
+            cid = "anon_client"
+            for msg in messages:
+                if msg.type == "system" and "customer_id: '" in msg.content:
+                    try:
+                        cid = msg.content.split("customer_id: '")[1].split("'")[0]
+                    except Exception:
+                        pass
+
             tool_call = {
                 "name": "create_reservation",
                 "args": {
                     "date": date,
                     "time": time,
                     "guests": guests,
-                    "customer_id": "anon_client",
+                    "customer_id": cid,
                     "special_requests": ""
                 },
                 "id": "call_mock_book_1",

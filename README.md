@@ -48,9 +48,10 @@ flowchart TD
 
 1. **Prenotazione di un tavolo**:
    - Assegnazione automatica del tavolo ottimale in base al numero di persone (2, 4, 6, 8, 10 posti) e sala desiderata (*interno, terrazza, giardino*).
-   - Controllo turni (*Pranzo 12:00-15:00* e *Cena 19:00-23:30*).
-   - Rispetto della chiusura settimanale (*Lunedì chiuso*).
-   - Generazione del codice di prenotazione univoco (es. `RES-9A8B2C`).
+   - **Gestione a slot di 90 minuti (Rotazione tavoli)**: Il tavolo non viene bloccato per l'intera serata, ma per esattamente 90 minuti dall'inizio della prenotazione. Questo permette al ristoratore di accogliere più turni (es. alle 19:30 e alle 21:00 sullo stesso tavolo).
+   - Controllo rigoroso degli orari (*Pranzo 12:00-15:00 con ultimo arrivo alle 14:00*, *Cena 19:00-23:30 con ultimo arrivo alle 22:00*).
+   - Validazione delle date (rifiuto date passate, formato errato e *Lunedì giorno di chiusura*).
+   - Generazione del codice di prenotazione univoco (es. `RES-9A8B2C`) collegato al `customer_id` anonimizzato.
 2. **Modifica di una prenotazione**:
    - Ricerca tramite codice di prenotazione.
    - Modifica di data, orario, numero coperti e note speciali, con ricalcolo e riassegnazione automatica del tavolo.
@@ -167,11 +168,11 @@ python client_demo.py http://<IP_MACCHINA_BE>:8000
 
 ## 🧪 Esecuzione della Suite di Test
 
-Tutti i test unitari e di integrazione (DB, Tools, LangGraph, API REST) possono essere eseguiti con:
+Tutti i test unitari e di integrazione (DB, Tools, LangGraph, API REST, rotazione slot, validazioni) possono essere eseguiti con:
 ```bash
 .\venv\Scripts\pytest.exe -v
 ```
-Risultato: **16 passed** (100% coverage delle funzionalità principali).
+Risultato: **22 passed** (100% test superati).
 
 ---
 
