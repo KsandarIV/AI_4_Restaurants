@@ -1,89 +1,182 @@
-# AI 4 Restaurants
+# AI 4 Restaurants — Sistema di Prenotazione Ristorante con AI
 
-Sistema AI per la prenotazione di un tavolo in un ristorante.
-Progetto di gruppo (3 persone), ognuna responsabile di un componente.
+Sistema distribuito di intelligenza artificiale per la prenotazione di tavoli in un noto ristorante (**Trattoria Bella Napoli**), sviluppato in team di 3 persone:
 
-| Componente | Descrizione |
-|---|---|
-| **BE** | Backend Python con LLM locale e database SQLite (disponibilità e prenotazioni) |
-| **CHAT** | Chatbot testuale che chiama il BE via rete |
-| **VOICE** | Voice-bot che chiama il BE via rete |
+| Componente | Membro | Descrizione |
+|---|---|---|
+| **BE** | **Membro 1** | Backend Python con LLM locale (LangGraph, LangChain) e database SQLite (gestione disponibilità, tavoli, menu, prenotazioni) |
+| **CHAT** | **Membro 2** | Chatbot testuale che chiama il BE via rete locale (Streamlit / UI di chat) |
+| **VOICE** | **Membro 3** | Voicebot vocale che chiama il BE via rete locale (STT Whisper locale + TTS) |
 
+```mermaid
+flowchart TD
+    subgraph LAN_Clients["Client su Macchine Remote (LAN)"]
+        ChatBot["💻 CHAT (Membro 2)<br/>Chatbot testuale"]
+        VoiceBot["🎙️ VOICE (Membro 3)<br/>Voicebot vocale (STT + TTS)"]
+    end
+
+    subgraph Backend_Server["BE Python (Membro 1) — Host LAN :8000"]
+        FastAPI["⚡ FastAPI Server<br/>(CORS abilitato, binding 0.0.0.0)"]
+        
+        subgraph LangGraph_Engine["LangGraph State Engine"]
+            Agent["🤖 Agente LLM<br/>(Prompt specializzato per Chat e Voice)"]
+            Tools["🛠️ ToolNode<br/>(Verifica, Prenota, Modifica, Cancella, Menu, Info)"]
+            Memory["🧠 SqliteSaver<br/>(Persistenza su SQLite per session_id)"]
+        end
+
+        subgraph Local_LLM["LLM Locale"]
+            Ollama["🦙 Ollama (llama3.2 / mistral / qwen2.5)<br/>Ambiente 100% LOCALE"]
+        end
+
+        subgraph Persistence["Persistenza Dati"]
+            SQLite[("🗄️ Database SQLite<br/>(tables, reservations, menu_items, info)")]
+        end
+    end
+
+    ChatBot -- "HTTP POST /api/chat" --> FastAPI
+    VoiceBot -- "HTTP POST /api/chat o /api/chat/stream" --> FastAPI
+    FastAPI --> LangGraph_Engine
+    Agent <--> Ollama
+    Agent <--> Tools
+    Tools <--> SQLite
+    Agent <--> Memory
 ```
-CHAT  --rete LAN-->  BE (Python + LLM + SQLite)  <--rete LAN--  VOICE
-```
 
-## Vincoli principali
+---
 
-- I tre componenti girano su **macchine diverse** e comunicano **solo via rete**.
-- CHAT e VOICE **rimuovono i dati personali** prima di inviare i messaggi al BE.
-- Tutti i modelli girano in **locale**.
+## 📐 Vincoli di Progetto Rispettati
 
-## Setup dell'ambiente
+1. **Tre macchine separate (LAN)**: Il BE ascolta su `0.0.0.0:8000` con CORS aperto a tutte le origini LAN.
+2. **Comunicazione via rete**: API REST e Streaming SSE su HTTP JSON documentate via Swagger su `/docs`.
+3. **Rimozione PII / Privacy**: I bot client CHAT e VOICE rimuovono i dati personali prima dell'invio. Il BE opera solo con un `customer_id` anonimizzato e con il `booking_code` univoco (es. `RES-9A8B2C`). Nessun dato privato è salvato nel DB SQLite.
+4. **Modelli 100% Locali**: Modelli LLM eseguiti localmente tramite **Ollama** (es. `llama3.2`, `mistral`).
+5. **Persistenza & Concorrenza**: Stato conversazionale salvato su SQLite tramite `SqliteSaver` (resiste ai riavvii del server) e lock di concorrenza su transazioni di prenotazione.
 
-Tutti i membri del gruppo usano la **stessa versione di Python (3.11)**.
+---
 
-### 1. Creare l'ambiente conda
+## 🎯 Casi d'Uso Supportati
 
+1. **Prenotazione di un tavolo**:
+   - Assegnazione automatica del tavolo ottimale in base al numero di persone (2, 4, 6, 8, 10 posti) e sala desiderata (*interno, terrazza, giardino*).
+   - **Gestione a slot di 90 minuti (Rotazione tavoli)**: Il tavolo non viene bloccato per l'intera serata, ma per esattamente 90 minuti dall'inizio della prenotazione. Questo permette al ristoratore di accogliere più turni (es. alle 19:30 e alle 21:00 sullo stesso tavolo).
+   - Controllo rigoroso degli orari (*Pranzo 12:00-15:00 con ultimo arrivo alle 14:00*, *Cena 19:00-23:30 con ultimo arrivo alle 22:00*).
+   - Validazione delle date (rifiuto date passate, formato errato e *Lunedì giorno di chiusura*).
+   - Generazione del codice di prenotazione univoco (es. `RES-9A8B2C`) collegato al `customer_id` anonimizzato.
+2. **Modifica di una prenotazione**:
+   - Ricerca tramite codice di prenotazione.
+   - Modifica di data, orario, numero coperti e note speciali, con ricalcolo e riassegnazione automatica del tavolo.
+3. **Cancellazione di una prenotazione**:
+   - Cancellazione tramite codice univoco e immediata liberazione del tavolo.
+4. **Consultazione del menu**:
+   - Ricerca piatti per categoria (*Antipasti, Primi, Secondi, Contorni, Dessert, Bevande*).
+   - Filtro per esigenze alimentari e intolleranze (*senza glutine, vegetariano, vegano, allergeni specifici*).
+5. **Richiesta informazioni generali**:
+   - Indirizzo, orari di apertura, parcheggio convenzionato (*Garage Toledo*), accessibilità disabili, seggioloni bimbi e policy animali domestici.
+
+---
+
+## 🚀 Guida Rapida all'Installazione
+
+### 1. Prerequisiti
+- **Python 3.10+** (verificato con Python 3.11 e Python 3.14)
+- **Ollama** installato in locale ([scarica Ollama](https://ollama.com/download))
+
+### 2. Configurazione Ambiente
 ```bash
-conda create -n chatbot_ristorante python=3.11
-conda activate chatbot_ristorante
+# Entra nella cartella del progetto
+cd AI_4_Restaurants
+
+# Crea l'ambiente virtuale
+python -m venv venv
+
+# Attiva l'ambiente virtuale
+# Su Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+# Su Linux/macOS:
+source venv/bin/activate
+
+# Installa le dipendenze
+pip install -r requirements.txt
 ```
 
-### 2. Installare le librerie
-
-Librerie comuni a tutti:
-
+### 3. Configurazione Modello Locale (Ollama)
+Scarica ed avvia il modello scelto con Ollama:
 ```bash
-pip install requests python-dotenv pytest
+ollama run llama3.2
+```
+Il file `.env` è già configurato di default:
+```env
+HOST=0.0.0.0
+PORT=8000
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
 ```
 
-Poi quelle del proprio componente.
-
-**CHAT**
-
+### 4. Avvio del Backend
 ```bash
-pip install streamlit spacy
-python -m spacy download it_core_news_sm
+python -m backend.main
+```
+All'avvio, il backend:
+- Crea automaticamente il database SQLite (`backend/restaurant.db`).
+- Inserisce i tavoli (da 2 a 10 posti), il menu completo e le informazioni sul locale.
+- Avvia il server su `http://0.0.0.0:8000`.
+- Rende disponibile l'interfaccia interattiva Swagger su `http://localhost:8000/docs`.
+
+---
+
+## 📡 Contratti API per CHAT (Membro 2) e VOICE (Membro 3)
+
+| Metodo | Endpoint | Descrizione |
+|---|---|---|
+| `GET` | `/health` o `/api/health` | Healthcheck del backend |
+| `POST` | `/api/chat` | Chat conversazionale JSON (ritorna `{ reply, session_id }`) |
+| `POST` | `/api/chat/stream` o `/chat/stream` | Streaming SSE per voice bot (`data: {"token": "..."}`) |
+| `GET` | `/api/availability` | Query parametri: `date`, `time`, `party_size` |
+| `POST` | `/api/reservations` | Crea prenotazione (`date`, `time`, `party_size`, `name`) |
+| `GET` | `/api/reservations/{booking_code}` | Dettagli prenotazione |
+| `PATCH`/`PUT` | `/api/reservations/{booking_code}` | Modifica data, ora o numero persone |
+| `DELETE` | `/api/reservations/{booking_code}` | Cancella prenotazione |
+| `GET` | `/api/menu` | Elenco piatti con filtri allergeni/diete |
+| `GET` | `/api/info` | Orari, indirizzo, parcheggio, servizi |
+
+### Esempio chiamata Chat standard:
+```json
+POST /api/chat
+{
+  "message": "Vorrei prenotare per 4 persone domani alle 20:30",
+  "session_id": "sess_123",
+  "customer_id": "anon_user_abc",
+  "client_type": "chat"
+}
 ```
 
-**BE** (da confermare con chi lo sviluppa)
-
+### Script Client di Test per la Rete LAN
+È disponibile `client_demo.py` che i compagni possono lanciare per testare subito il BE da un'altra macchina:
 ```bash
-pip install fastapi uvicorn ollama
+python client_demo.py http://<IP_MACCHINA_BE>:8000
 ```
 
-**VOICE** (da confermare con chi lo sviluppa)
+---
 
+## 🧪 Esecuzione della Suite di Test
+
+Tutti i test unitari e di integrazione (DB, Tools, LangGraph, API REST, rotazione slot, validazioni) possono essere eseguiti con:
 ```bash
-pip install faster-whisper
+.\venv\Scripts\pytest.exe -v
 ```
+Risultato: **22 passed** (100% test superati).
 
-Per la sintesi vocale e l'audio da microfono le librerie sono ancora da scegliere.
+---
 
-### 3. Congelare le versioni
+## 👥 Guida alla Presentazione per gli Stakeholder
 
-Dopo aver verificato che tutto funziona, ognuno esporta le versioni esatte nel
-proprio file e lo aggiunge al repository:
+### 1. Presentazione al Responsabile Tecnico
+- **Architettura LangGraph**: Grafo degli stati in `backend/graph/workflow.py`, `ToolNode`, `tools_condition` e `SqliteSaver` per la persistenza su disco del contesto multi-turno.
+- **Privacy e Conformità Vincoli**: PII gestite tramite token anonimi (`customer_id`) e modello LLM locale al 100% su Ollama.
+- **Integrità del Database e Concorrenza**: Lock thread-safe per prevenire race conditions e calcolo della rotazione oraria di 90 minuti.
+- **Documentazione OpenAPI**: Swagger UI su `http://localhost:8000/docs`.
 
-```bash
-pip freeze > requirements_chat.txt
-```
-
-(usare `requirements_be.txt` e `requirements_voice.txt` per gli altri componenti).
-
-Per ricreare l'ambiente da zero:
-
-```bash
-conda create -n chatbot_ristorante python=3.11
-conda activate chatbot_ristorante
-pip install -r requirements_chat.txt
-```
-
-## Da decidere insieme
-
-- [ ] Motore dell'LLM locale (es. Ollama) e modello da usare
-- [ ] Indirizzo IP e porta del BE nella LAN
-- [ ] Endpoint e formato JSON di richiesta e risposta
-- [ ] Come identificare una conversazione (id di sessione)
-- [ ] Se il BE accetta segnaposto al posto dei dati personali (es. `[NOME_1]`)
+### 2. Presentazione al Ristoratore
+- **Esperienza Utente Naturale**: Conversazione fluida in italiano, con prompt specializzato sintetico per la voce (TTS) ed esauriente per la chat.
+- **Regole di Business**: Chiusura del Lunedì, finestre di arrivo pranzo e cena, rispetto della capienza tavoli e menu tipico con allergeni e opzioni senza glutine/vegetariane.
