@@ -1,0 +1,7 @@
+# CHAT: UI + anonimizzatore + NER locale (solo macchina CHAT a runtime).
+streamlit>=1.30
+requests>=2.31
+spacy>=3.7
+phonenumbers>=8.13  # il CHAT valida il telefono (chat/contatti.py)
+# + modello NER (NON via pip, comando manuale sulla macchina CHAT):
+#   .venv\Scripts\python -m spacy download it_core_news_md

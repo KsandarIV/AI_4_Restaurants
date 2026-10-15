@@ -41,11 +41,12 @@ se un collega aggiorna `requirements.txt`, al prossimo avvio il setup riparte da
 
 ## File
 
-- `setup_env.py` — script interattivo (crea `.venv`, `pip install -r requirements.txt`
-  + editable install di `voice/`/`be/`/`chat/` se hanno `pyproject.toml`,
-  check `ollama` + `ollama pull gemma4:12b`, download voce Piper in `voice/models/`).
-- `env_check.py` — `ensure_environment()` per le pipeline.
-- `requirements.txt` — dipendenze unificate dei 3 componenti (fonte di verità;
-  `voice/pyproject.toml` la rispecchia per il build Docker).
+- `setup_env.py` — script interattivo (crea `.venv`, installa `requirements/<ruolo>.txt`
+  per `--role be|chat|voice|all` + editable install di `voice/` se ha `pyproject.toml`,
+  check `ollama` + `ollama pull gemma4:12b`, modello spaCy (solo ruolo chat),
+  download voce Piper in `voice/models/`).
+- `env_check.py` — `ensure_environment(role=...)` per le pipeline (check solo base+ruolo).
+- `requirements/` — dipendenze scomposte per ruolo (fonte di verità;
+  `voice/pyproject.toml` rispecchia `voice.txt` per l'editable install).
 - Il `.env` è unico in root (vedi `../.env.example`); `voicebot.config.find_env_file()`
   lo trova anche lanciando da `voice/`.

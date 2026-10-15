@@ -8,6 +8,8 @@ Sistema distribuito di intelligenza artificiale per la prenotazione di tavoli in
 | **CHAT** | **Membro 2** | Chatbot testuale che chiama il BE via rete locale (Streamlit / UI di chat) |
 | **VOICE** | **Membro 3** | Voicebot vocale che chiama il BE via rete locale (STT Whisper locale + TTS) |
 
+A questi si aggiunge il **frontend** (`frontend/`): il sito del ristorante con un assistente per prenotare scrivendo o parlando (vedi [frontend/README.md](frontend/README.md)). La chat del sito passa dal servizio `chat/api.py` (porta 8002), non direttamente dal BE.
+
 ```mermaid
 flowchart TD
     subgraph LAN_Clients["Client su Macchine Remote (LAN)"]
@@ -25,7 +27,7 @@ flowchart TD
         end
 
         subgraph Local_LLM["LLM Locale"]
-            Ollama["🦙 Ollama (llama3.2 / mistral / qwen2.5)<br/>Ambiente 100% LOCALE"]
+            Ollama["🦙 Ollama (gemma4:12b / gemma4-coder / llama3.2)<br/>Ambiente 100% LOCALE"]
         end
 
         subgraph Persistence["Persistenza Dati"]
@@ -46,10 +48,10 @@ flowchart TD
 
 ## 📐 Vincoli di Progetto Rispettati
 
-1. **Tre macchine separate (LAN)**: Il BE ascolta su `0.0.0.0:8000` con CORS aperto a tutte le origini LAN.
+1. **Tre macchine separate (LAN)**: Il BE ascolta su `0.0.0.0:8000` con CORS aperto alla LAN (restringibile con `CORS_ORIGINS`).
 2. **Comunicazione via rete**: API REST e Streaming SSE su HTTP JSON documentate via Swagger su `/docs`.
 3. **Privacy / PII (vincolo rivisto dal gruppo)**: nome e telefono servono al ristorante per contattare il cliente, quindi CHAT e VOICE li raccolgono *prima* della conversazione e li inviano **solo** a `POST /api/customers`, che li salva nella tabella `customers` e restituisce un `customer_id` anonimo. L'LLM vede soltanto quel `customer_id` e il `booking_code` (es. `RES-9A8B2C`): nome e telefono non entrano mai nel suo contesto né nei risultati dei tool. Il testo libero della conversazione resta anonimizzato dai client. Vedi "Registrazione dei clienti".
-4. **Modelli 100% Locali**: Modelli LLM eseguiti localmente tramite **Ollama** (es. `llama3.2`, `mistral`).
+4. **Modelli 100% Locali**: Modelli LLM eseguiti localmente tramite **Ollama** (`gemma4:12b`, in alternativa `gemma4-coder` o `llama3.2`); spaCy per la chat, Whisper e Piper per la voce.
 5. **Persistenza & Concorrenza**: Stato conversazionale salvato su SQLite tramite `SqliteSaver` (resiste ai riavvii del server) e lock di concorrenza su transazioni di prenotazione.
 
 ---
@@ -77,51 +79,48 @@ flowchart TD
 
 ## 🚀 Guida Rapida all'Installazione
 
-### 1. Prerequisiti
-- **Python 3.10+** (verificato con Python 3.11 e Python 3.14)
-- **Ollama** installato in locale ([scarica Ollama](https://ollama.com/download))
-
-### 2. Configurazione Ambiente
-```bash
-# Entra nella cartella del progetto
+### Un comando per macchina (consigliato)
+Su ciascuna delle tre macchine, dalla cartella del progetto:
+```bat
+git clone https://github.com/KsandarIV/AI_4_Restaurants.git     :: solo la prima volta
 cd AI_4_Restaurants
+python entrypoint\avvia.py
+```
+Lo script ([entrypoint/README.md](entrypoint/README.md)) fa in ordine: aggiorna il codice (`git pull --ff-only`), crea il venv condiviso `.venv` e scarica i modelli, chiede il ruolo (`be`, `chat` o `voice`) una sola volta, scrive il `.env` della macchina (con l'IP del BE), apre la porta nel firewall e avvia il componente. **Il BE va avviato per primo**: chat e voice aspettano che risponda. Altri usi: `--status` (stato delle tre macchine), `--no-git`, `--yes`. Dettagli sulla rete: [lan/README.md](lan/README.md).
 
-# Crea l'ambiente virtuale
-python -m venv venv
+| Ruolo | Cosa avvia | Porta | Modelli (tutti locali) |
+|---|---|---|---|
+| `be` | `python -m backend.main` | 8000 | LLM in Ollama |
+| `chat` | `streamlit run chat/app.py` | 8501 | spaCy |
+| `voice` | `python -m voicebot` | 8003 | Whisper e Piper |
 
-# Attiva l'ambiente virtuale
-# Su Windows PowerShell:
-.\venv\Scripts\Activate.ps1
-# Su Linux/macOS:
-source venv/bin/activate
+### Prerequisiti
+- **Python 3.10+** (verificato con 3.11) e **git**.
+- **Ollama** solo sulla macchina BE ([scarica Ollama](https://ollama.com/download)). Lo script di setup scarica `gemma4:12b` se manca.
+- Le tre macchine sulla stessa rete, con le porte 8000, 8501 e 8003 aperte in ingresso (lo script le configura o stampa i comandi `netsh`).
 
-# Installa le dipendenze
-pip install -r requirements.txt
+### Installazione manuale (per sviluppare)
+```bat
+python setup\setup_env.py        :: .venv condiviso (setup/requirements.txt), modello Ollama, voce Piper, modello spaCy
+.venv\Scripts\activate
+```
+Le impostazioni stanno nel file `.env` della macchina (un solo `.env.example` per i tre componenti; il `.env` non si committa mai). Poi, un componente per terminale:
+```bat
+python -m backend.main                          :: BE, porta 8000
+python -m voicebot                               :: VOICE, porta 8003
+
+set BE_URL=http://<IP_BE>:8000                   :: CHAT: l'indirizzo si può anche cambiare nella barra laterale
+streamlit run chat/app.py
 ```
 
-### 3. Configurazione Modello Locale (Ollama)
-Scarica ed avvia il modello scelto con Ollama:
-```bash
-ollama run llama3.2
-```
-Il file `.env` è già configurato di default:
-```env
-HOST=0.0.0.0
-PORT=8000
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2
-```
+### Il modello linguistico (solo macchina BE)
+Il BE sceglie da solo il modello: prima `OLLAMA_MODEL` (predefinito `gemma4:12b`), poi i ripieghi `gemma4-coder` e `llama3.2`, ma solo se sanno usare gli strumenti (servono per prenotare). Controlla cosa hai installato con `ollama list`; non serve `ollama run`: il BE carica il modello all'avvio. Dettagli e verifica: sezione "Sicurezza, area del ristoratore e manutenzione".
 
-### 4. Avvio del Backend
-```bash
-python -m backend.main
-```
 All'avvio, il backend:
-- Crea automaticamente il database SQLite (`backend/restaurant.db`).
+- Crea automaticamente il database SQLite (`backend/restaurant.db`), aggiorna i database vecchi e riallinea menu e informazioni.
 - Inserisce i tavoli (da 2 a 10 posti), il menu completo e le informazioni sul locale.
-- Avvia il server su `http://0.0.0.0:8000`.
-- Rende disponibile l'interfaccia interattiva Swagger su `http://localhost:8000/docs`.
+- Sceglie e carica il modello (messaggi nel log, modello in uso in `/api/health`).
+- Avvia il server su `http://0.0.0.0:8000` e rende disponibile Swagger su `http://localhost:8000/docs`.
 
 ---
 
@@ -167,10 +166,11 @@ POST /api/chat
 }
 ```
 
-### Script Client di Test per la Rete LAN
-È disponibile `client_demo.py` che i compagni possono lanciare per testare subito il BE da un'altra macchina:
-```bash
-python client_demo.py http://<IP_MACCHINA_BE>:8000
+### Verifica della rete tra le macchine
+```bat
+python entrypoint\avvia.py --status            :: stato HTTP delle tre macchine
+curl http://<IP_BE>:8000/api/health            :: da chat o voice: deve rispondere "status":"online"
+python -m backend.check_model                  :: sulla macchina BE: 8 prove sul modello scelto
 ```
 
 ---
