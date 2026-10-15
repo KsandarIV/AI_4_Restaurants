@@ -131,3 +131,21 @@ a { color: var(--accent); }
 .btn-outline { background: transparent; color: var(--accent); }
 .btn-outline:hover { background: var(--accent); color: #fff; }
 .empty { color: var(--muted); font-style: italic; }
+
+/* orb: the animation speaks for itself, the state line stays only for screen readers */
+.state-line { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* the live transcript is shown only in the local test (class set by app.js) */
+.assistant:not(.show-log) .log { display: none; }
+.assistant:not(.show-log) { height: auto; }
+.assistant:not(.show-log) .assistant-foot { padding-top: 6px; }
+
+/* booking summary pop-up */
+.toast { position: fixed; left: 24px; bottom: 24px; z-index: 60; min-width: 250px; max-width: min(340px, calc(100vw - 32px)); padding: 16px 20px 18px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-left: 6px solid var(--accent); border-radius: 18px; box-shadow: var(--shadow); font-family: system-ui, sans-serif; animation: toast-in .28s ease-out; }
+.toast[hidden] { display: none !important; }
+.toast p { margin: 0; }
+.toast-title { color: var(--accent); font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 6px !important; }
+.toast-name { font-family: Georgia, serif; font-size: 1.3rem; font-weight: 700; }
+.toast-when { font-size: 1.05rem; margin-top: 4px !important; }
+.toast-who { color: var(--muted); font-size: .95rem; margin-top: 2px !important; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@media (max-width: 720px) { .toast { left: 50%; bottom: 16px; transform: translateX(-50%); animation: none; } }

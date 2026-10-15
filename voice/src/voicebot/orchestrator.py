@@ -3,11 +3,13 @@
 It reproduces ``chat/api.py`` step by step, so a customer gets the same behaviour on
 the phone as in the chat window:
 
-  1. REGISTRATION phase - ask name + phone in one utterance, read them back, confirm,
-     then ``POST /api/customers`` -> anonymous ``customer_id``. The LLM never takes part
-     and never sees these data.
-  2. CHAT phase - every utterance goes  anonymise -> BE (``/api/chat`` or the SSE stream)
-     -> restore placeholders -> text for the TTS.
+  1. CHAT phase - the call opens with a short welcome; every utterance goes
+     anonymise -> BE (``/api/chat`` or the SSE stream) -> restore placeholders -> TTS.
+  2. REGISTRATION phase - entered only when the caller talks about booking (menu and
+     information never need it): ask name + phone, read them back, confirm, then
+     ``POST /api/customers`` -> anonymous ``customer_id``. The LLM never takes part and
+     never sees these data. The request that triggered it is kept and sent to the BE
+     (anonymised) right after the registration, so the caller does not repeat it.
 
 There are NO local intent shortcuts (no regex "menu"/"booking" detection, no hard-coded
 dates): the BE's LangGraph agent decides everything, including the yes/no confirmation of
@@ -25,16 +27,24 @@ from typing import Any
 
 from .anonymizer import Anonymizer
 from .backend import BackendClient, BackendError
-from .contacts import RegistrationDialog, is_plain_no, is_plain_yes
+from .contacts import RegistrationDialog, is_plain_no, is_plain_yes, wants_booking
 from .interfaces import AbstractLLMOrchestrator, ChatMessage
 from .logging_json import get_logger
 from .messages import normalize_language, say
 from .prompts import build_system_prompt
-from .spoken import spoken_date, spoken_location, spoken_number, spoken_time
+from .spoken import spoken_area, spoken_date, spoken_location, spoken_number, spoken_time
 
 log = get_logger("orchestrator")
 
 _BOOKING_CODE = re.compile(r"\bRES-[A-Z0-9]{4,10}\b")
+
+
+# The caller named a room: only then the pop-up shows the room (otherwise the BE just picked one).
+_AREA_WORDS = re.compile(
+    r"\b(?:terrazza|giardino|sala|interno|interna|dentro|fuori|esterno|all'aperto|veranda|"
+    r"terrace|garden|indoors?|outdoors?|inside|outside)\b",
+    re.I,
+)
 
 
 class Phase(str, Enum):
@@ -73,7 +83,10 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         self.customer_id = f"anon_{uuid.uuid4().hex[:6]}"
         self.anonymizer = Anonymizer(use_model=self._use_ner)
         self.dialog = RegistrationDialog(self._language)
-        self.phase = Phase.REGISTRATION if self._require_registration else Phase.CHAT
+        self.phase = Phase.CHAT  # registration starts only when the caller wants to book
+        self._pending: str | None = None  # the booking request that triggered the registration
+        self._replay: str | None = None  # ...ready to be sent to the BE once registered
+        self._area_said = False  # the caller asked for a room (terrazza, giardino...) in this booking
         self.history = [ChatMessage(role="system", content=self._system)]
         self._reported: dict[str, tuple[Any, ...]] = {}  # booking code -> details already read aloud
         self._awaiting_final: str | None = None  # code waiting for the caller's last "yes"
@@ -95,12 +108,8 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
     # ---------------- public API ----------------
 
     async def opening(self) -> str:
-        """First thing said on the call: ask for contact data, or welcome."""
-        text = (
-            self.dialog.opening()
-            if self.phase is Phase.REGISTRATION
-            else say(self._language, "welcome_chat")
-        )
+        """First thing said on the call: a short welcome, nothing is asked yet."""
+        text = say(self._language, "welcome_chat")
         self._remember("assistant", text)
         return text
 
@@ -108,7 +117,11 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         """One complete reply through ``POST /api/chat`` (on-demand v2 mode)."""
         local = await self._local_turn(user_text)
         if local is not None:
-            return local
+            replay = self._take_replay()
+            return f"{local} {await self._backend_reply(replay)}" if replay else local
+        return await self._backend_reply(user_text)
+
+    async def _backend_reply(self, user_text: str) -> str:
         anonymized = await self._anonymize(user_text)
         try:
             data = await self._backend.chat(anonymized, self.session_id, self.customer_id)
@@ -127,7 +140,16 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         local = await self._local_turn(user_text)
         if local is not None:
             yield local
+            replay = self._take_replay()
+            if replay:
+                yield " "
+                async for piece in self._backend_stream(replay):
+                    yield piece
             return
+        async for piece in self._backend_stream(user_text):
+            yield piece
+
+    async def _backend_stream(self, user_text: str) -> AsyncIterator[str]:
         anonymized = await self._anonymize(user_text)
         restorer = self.anonymizer.stream_restorer()
         spoken: list[str] = []
@@ -173,6 +195,19 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         text = user_text.strip()
         if not text:
             return say(self._language, "didnt_hear")
+        if self.phase is Phase.CHAT and _AREA_WORDS.search(text):
+            self._area_said = True
+        if (
+            self.phase is Phase.CHAT and self._require_registration and not self.registered
+            and wants_booking(text)
+        ):  # the caller wants to book: only now name and phone are needed
+            self._pending = text
+            self.phase = Phase.REGISTRATION
+            self.dialog = RegistrationDialog(self._language)
+            self._remember("user", "(booking request)")  # the words themselves wait for the registration
+            reply = self.dialog.opening()
+            self._remember("assistant", reply)
+            return reply
         if self.phase is Phase.REGISTRATION:
             self._remember("user", "(registration data)")  # never keep contact data in history
             reply = await self._registration_step(text)
@@ -183,6 +218,7 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
             self._awaiting_final = None
             who = self._who()
             if is_plain_yes(text):
+                await self._emit_event({"event": "reservation_confirmed"})  # the page closes its pop-up
                 reply = say(self._language, "final_ok", who=who)
             elif is_plain_no(text):
                 reply = say(self._language, "final_no")
@@ -191,6 +227,13 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
             self._remember("assistant", reply)
             return reply
         return None
+
+    def _take_replay(self) -> str | None:
+        """The booking request to send to the BE now (once), or None."""
+        replay, self._replay = self._replay, None
+        if replay:
+            self._remember("user", replay)
+        return replay
 
     def _who(self) -> str:
         """' for Mario Rossi' - spoken locally, the name never goes to the BE."""
@@ -234,7 +277,11 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
             "date": str(res.get("date") or ""), "time": str(res.get("time") or ""),
             "guests": str(res.get("guests_count") or ""), "customer_id": self.customer_id,
             "table": str(res.get("table_number") or ""), "location": str(res.get("table_location") or ""),
+            # only for the caller's own page (same WebSocket): their name, and the room only if they asked for it
+            "name": self.dialog.name or "",
+            "area": spoken_area(res.get("table_location"), self._language) if self._area_said else "",
         })
+        self._area_said = False
         lang, who = self._language, self._who()
         if status == "CANCELLED":
             self._awaiting_final = None
@@ -260,6 +307,7 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
                     self.dialog.name or "", self.dialog.phone or ""
                 )
                 self.phase = Phase.CHAT
+                self._replay, self._pending = self._pending, None
                 log.info("customer registered id=%s", self.customer_id)
                 await self._emit_event({"event": "registered", "customer_id": self.customer_id})
                 return say(self._language, "registered", name=self.dialog.name or "")
@@ -270,6 +318,7 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
                 )
         if action == "give_up":
             self.phase = Phase.CHAT  # carry on with the anonymous customer id
+            self._pending = None
         return reply
 
     def _error_text(self, exc: BackendError, registration: bool = False) -> str:

@@ -71,7 +71,8 @@ def test_documentation_matches_the_code() -> None:
 def test_prompt_defines_role_and_actions() -> None:
     from voicebot.prompts import VOICE_AGENT_PROMPT, build_system_prompt
 
-    for section in ("# ROLE", "# CHANNEL RULES", "# ACTIONS", "# CONFIRMATION", "# PRIVACY", "# ALLERGIES"):
+    for section in ("# RUOLO", "# LINGUA E STILE", "# COSA PUOI FARE", "# CONFERMA", "# DATI PERSONALI", "# ALLERGIE"):
         assert section in VOICE_AGENT_PROMPT
     assert build_system_prompt("") == VOICE_AGENT_PROMPT
+    assert "Rispondi in italiano di default" in VOICE_AGENT_PROMPT and "ambiente specifico" in VOICE_AGENT_PROMPT
     assert build_system_prompt("  custom  ") == "custom"

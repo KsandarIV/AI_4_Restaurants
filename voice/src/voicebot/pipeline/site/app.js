@@ -38,6 +38,8 @@
       h_address: "Indirizzo", h_hours: "Orari", h_parking: "Parcheggio", h_phone: "Telefono", h_services: "Servizi", h_payments: "Pagamenti",
       assistant_title: "Assistente vocale", close: "Chiudi", orb_aria: "Tocca per avviare o terminare la conversazione",
       new_conversation: "Nuova conversazione", hang_up: "Termina",
+      toast_confirmed: "Prenotazione confermata", toast_updated: "Prenotazione aggiornata",
+      toast_guests: "{n} persone", toast_guest_one: "1 persona",
       st_off: "Tocca il cerchio per parlare", st_connecting: "Mi collego…", st_loading: "Carico i modelli vocali…",
       st_listening: "Ti ascolto… fai una pausa quando hai finito", st_heard: "Ok…", st_thinking: "Ci penso…",
       st_speaking: "Parlo… puoi interrompermi", st_retry: "Connessione persa: riprovo tra {s} s…",
@@ -71,6 +73,8 @@
       h_address: "Address", h_hours: "Opening hours", h_parking: "Parking", h_phone: "Phone", h_services: "Services", h_payments: "Payments",
       assistant_title: "Voice assistant", close: "Close", orb_aria: "Tap to start or end the conversation",
       new_conversation: "New conversation", hang_up: "Hang up",
+      toast_confirmed: "Booking confirmed", toast_updated: "Booking updated",
+      toast_guests: "{n} guests", toast_guest_one: "1 guest",
       st_off: "Tap the circle to talk", st_connecting: "Connecting…", st_loading: "Loading the speech models…",
       st_listening: "Listening… pause when you are done", st_heard: "Got it…", st_thinking: "Thinking…",
       st_speaking: "Speaking… you can interrupt", st_retry: "Connection lost: retrying in {s} s…",
@@ -294,14 +298,6 @@
     const spin = mode === "thinking" ? 2.6 : 0.15 + active * 1.6 + (mode === "speaking" ? 1.2 : 0);
     const amp = mode === "heard" ? 7 : 5 + level * 34 + (mode === "speaking" ? 10 : 0);
     const rot = mode === "thinking" ? t * 0.6 : 0;  // il pensiero "ruota" piano
-    // alone
-    // alone: si allarga quando entra il modello/BE (thinking), respira col parlato
-    const glowR = R * (mode === "thinking" ? 2.3 : 1.7);
-    const glow = g.createRadialGradient(CX, CY, R * 0.4, CX, CY, glowR);
-    glow.addColorStop(0, "rgba(179,52,31,0)");
-    glow.addColorStop(1, `rgba(179,52,31,${0.10 + level * 0.35 + (mode === "thinking" ? 0.15 : 0)})`);
-    g.fillStyle = glow;
-    g.fillRect(0, 0, 520, 520);
     // blob
     const grad = g.createRadialGradient(CX - 40, CY - 50, 20, CX, CY, R + 40);
     grad.addColorStop(0, "#d95f43"); grad.addColorStop(0.6, "#b3341f"); grad.addColorStop(1, "#8a2615");
@@ -332,11 +328,6 @@
       g.fillStyle = `rgba(255,255,255,${Math.min(0.95, d.o + 0.15)})`;
       g.fill();
     }
-    // anello morbido che SI ALLARGA quando entra il modello/BE (niente oro)
-    const ringBase = R + 26, ringAmp = mode === "thinking" ? 26 : 8;
-    g.beginPath(); g.arc(CX, CY, ringBase + Math.sin(t * (mode === "thinking" ? 5 : 2)) * ringAmp, 0, Math.PI * 2);
-    g.strokeStyle = `rgba(179,52,31,${mode === "thinking" ? 0.55 : 0.30})`;
-    g.lineWidth = mode === "thinking" ? 5 : 2.5; g.stroke();
     // increspature a ogni pacchetto audio ricevuto (sta parlando)
     ripples = ripples.filter(rp => rp.a > 0.02);
     for (const rp of ripples) {
@@ -378,6 +369,25 @@
     if (curSrc) { try { curSrc.stop(); } catch (e) { /* already stopped */ } }
   }
 
+  // ---- booking summary pop-up: shown when a booking is made, closed 4 s after the caller's spoken
+  // final "yes" (voice only: no button, no click). Also closed when the call ends.
+  const TOAST_MS = 4000;
+  let toastTimer = null;
+  function showToast(m) {
+    clearTimeout(toastTimer);
+    const when = new Date(m.date + "T12:00:00");
+    const day = isNaN(when) ? m.date : when.toLocaleDateString(LANG === "en" ? "en-GB" : "it-IT",
+      { weekday: "long", day: "numeric", month: "long" });
+    const n = Number(m.guests) || 0;
+    $("toast-name").textContent = m.name || "";
+    $("toast-name").hidden = !m.name;
+    $("toast-when").textContent = day.charAt(0).toUpperCase() + day.slice(1) + " · " + String(m.time || "").slice(0, 5);
+    $("toast-who").textContent = t(n === 1 ? "toast_guest_one" : "toast_guests", { n }) + (m.area ? " · " + m.area : "");
+    $("toast-title").textContent = t(String(m.status).toUpperCase() === "CONFIRMED" ? "toast_confirmed" : "toast_updated");
+    $("toast").hidden = false;
+  }
+  function hideToast() { clearTimeout(toastTimer); $("toast").hidden = true; }
+
   function onMessage(ev) {
     if (typeof ev.data !== "string") { ripples.push({ r: R + 10, a: 0.6 }); playQ.push(ev.data); playLoop(); return; }
     let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
@@ -396,7 +406,9 @@
         if (m.customer_id) { store.customer_id = m.customer_id; }
         upsert({ code: m.code, date: m.date, time: m.time, guests: Number(m.guests) || 0, status: m.status,
                  table: m.table, location: m.location });
+        if (String(m.status).toUpperCase() === "CANCELLED") hideToast(); else showToast(m);
         break;
+      case "reservation_confirmed": toastTimer = setTimeout(hideToast, TOAST_MS); break;  // the caller said the final yes
       case "error": flashRed = 1; setState("st_error", { d: (m.detail || "error") + (m.message ? " " + m.message : "") }); break;
       default: break;
     }
@@ -440,7 +452,7 @@
   }
   function hangUp() {
     const was = wantLive;
-    wantLive = false; live = false; clearTimeout(retryTimer); stopPlayback(); level = 0; mode = "idle";
+    wantLive = false; live = false; clearTimeout(retryTimer); stopPlayback(); level = 0; mode = "idle"; hideToast();
     try { if (ws) ws.close(); } catch (e) { /* closing */ }
     try { if (proc) proc.disconnect(); if (stream) stream.getTracks().forEach((x) => x.stop()); if (ctx) ctx.close(); } catch (e) { /* closing */ }
     ws = proc = stream = ctx = null;
@@ -455,7 +467,10 @@
     try { cfg = await getJson("/site/config"); } catch (e) { /* defaults */ }
     LANG = cfg.language === "en" ? "en" : "it";
     applyI18n();
-    if (cfg.mode === "local") { const b = $("banner"); b.hidden = false; b.textContent = t("banner_local"); }
+    if (cfg.mode === "local") {
+      const b = $("banner"); b.hidden = false; b.textContent = t("banner_local");
+      $("assistant").classList.add("show-log");  // the live transcript is a test tool: only in local mode
+    }
     renderReservations();
     loadInfo(); loadMenu();
     refreshAll();

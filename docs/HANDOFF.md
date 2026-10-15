@@ -62,3 +62,11 @@ Fixed: a phone number cut in two utterances by a pause is joined; Whisper prompt
 Shared files touched: `docs/FLUSSO.md`, `docs/HANDOFF.md`, `.env.example` (VOICE section). The BE was not touched.
 Attention: the BE has no "list my reservations" endpoint, so the page keeps the codes of this browser (localStorage);
 a `GET /api/customers/{id}/reservations` would let any browser show them all (BE team decision).
+
+## Handoff 2026-10-15 (late) — VOICE: lazy registration, Italian prompt, booking pop-up, from VOICE to team
+Changed (voice only): the call opens with a short welcome ("Come posso aiutarla?"); name + phone are asked only when the caller
+talks about booking, then the original request is replayed to the BE. Agent prompt is now Italian (`voice/src/voicebot/prompts.py`),
+multilingual by the customer's language, asks about a room before confirming. The site shows a rounded booking pop-up closed
+4 s after the spoken final yes; orb without halo/ring/hint text; live transcript only in local test mode. ~166 tests.
+To do (BE team): adopt the voice prompt in `backend/graph/prompts.py`; "ask the surname only when a similar booking exists"
+needs the BE (voice cannot see other customers' bookings); the BE assigns a room even when none is asked.

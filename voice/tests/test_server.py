@@ -98,7 +98,7 @@ async def test_ready_reports_unreachable_backend() -> None:
 
 async def test_phone_call_end_to_end_registration_then_booking() -> None:
     """Greeting -> register by voice -> book with confirmation, through real sockets."""
-    script = ["Mario Rossi, 333 1234567", "sì", "Vorrei prenotare un tavolo per due", "sì"]
+    script = ["Vorrei prenotare un tavolo per due", "Mario Rossi, 333 1234567", "sì", "sì"]
     async with stub_be() as (be_url, state), voice_server(be_url, script) as (host, _):
         frames: asyncio.Queue[bytes | None] = asyncio.Queue()
         speaker = RecordingSpeaker()
@@ -110,7 +110,7 @@ async def test_phone_call_end_to_end_registration_then_booking() -> None:
             return [str(e["text"]) for e in events if e.get("event") == "reply"]
 
         await wait_until(lambda: len(replies()) >= 1)
-        assert "nome e cognome" in replies()[0]
+        assert "Come posso aiutarla" in replies()[0] and "telefono" not in replies()[0]
         ready = next(e for e in events if e.get("event") == "ready")
         assert ready["tts_sample_rate"] == 22050 and ready["sample_rate"] == 16000
         for k in range(len(script)):
@@ -120,7 +120,8 @@ async def test_phone_call_end_to_end_registration_then_booking() -> None:
                 frames.put_nowait(silence())
             await wait_until(lambda k=k: len(replies()) >= k + 2)
 
-        assert "Registrazione completata" in replies()[2]
+        assert "numero di telefono" in replies()[1]  # asked only after the booking request
+        assert "è tutto a posto" in replies()[3] and "Confermi" in replies()[3]
         assert "RES-STUB01" in replies()[4] and "RES-STUB01" in state.reservations
         assert [e["text"] for e in events if e.get("event") == "transcript"] == script
         assert speaker.chunks and all(rate == 22050 for _, rate in speaker.chunks)

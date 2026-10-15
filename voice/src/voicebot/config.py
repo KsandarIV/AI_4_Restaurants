@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     # instead of talking to the BE directly. Off by default: the brief says the
     # bots talk to the BE only.
     chat_service_url: str = Field(default="")
-    # Empty = use the built-in English agent prompt (voicebot.prompts).
+    # Empty = use the built-in Italian agent prompt (voicebot.prompts).
     llm_system_prompt: str = Field(default="")
     llm_max_history: int = Field(default=12)
     llm_token_timeout_s: float = Field(default=120.0)

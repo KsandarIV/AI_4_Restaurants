@@ -88,7 +88,7 @@ async def test_full_registration_and_booking_by_voice_against_the_be() -> None:
             events.append(payload)
 
         llm = make_orchestrator(url)
-        script = ["Mario Rossi, 333 1234567", "sì", "Vorrei prenotare un tavolo per due", "sì"]
+        script = ["Vorrei prenotare un tavolo per due", "Mario Rossi, 333 1234567", "sì", "sì"]
         session = make_session(llm, script=script, on_control=on_control, speak_opening=True)
         run = asyncio.create_task(session.run())
 

@@ -8,19 +8,58 @@ from tests.helpers import make_orchestrator, stub_be
 from voicebot.orchestrator import BackendOrchestrator, Phase
 
 
-async def _register(orch: BackendOrchestrator) -> None:
+BOOKING = "Vorrei prenotare un tavolo per due domani alle venti"
+
+
+async def _register(orch: BackendOrchestrator, request: str = BOOKING) -> str:
+    """Ask to book, give name and phone, confirm: returns what the caller hears after the last yes."""
+    asked = await orch.reply(request)
+    assert orch.phase is Phase.REGISTRATION and "numero di telefono" in asked
     await orch.reply("Mario Rossi, 333 1234567")
-    assert orch.phase is Phase.REGISTRATION
-    assert "registrati" in (await orch.reply("sì")).lower() or orch.phase is Phase.CHAT
-    assert orch.phase is Phase.CHAT
+    reply = await orch.reply("sì")
+    assert orch.phase is Phase.CHAT and orch.registered
+    return reply
 
 
-async def test_call_starts_by_asking_for_contact_details() -> None:
+async def test_call_starts_with_a_short_welcome_and_asks_nothing() -> None:
     async with stub_be() as (url, _):
         orch = make_orchestrator(url)
         opening = await orch.opening()
-        assert "nome e cognome" in opening and "telefono" in opening
-        assert orch.phase is Phase.REGISTRATION
+        assert opening == "Benvenuto alla Trattoria Bella Napoli! Come posso aiutarla?"
+        assert orch.phase is Phase.CHAT and "telefono" not in opening
+        await orch.aclose()
+
+
+async def test_menu_and_info_never_ask_for_contact_details() -> None:
+    async with stub_be() as (url, state):
+        orch = make_orchestrator(url)
+        await orch.opening()
+        assert "bruschetta" in (await orch.reply("che menu avete?")).lower()
+        assert orch.phase is Phase.CHAT and not state.customers
+        await orch.aclose()
+
+
+async def test_booking_request_triggers_registration_and_is_not_asked_twice() -> None:
+    async with stub_be() as (url, state):
+        orch = make_orchestrator(url)
+        await orch.opening()
+        asked = await orch.reply(BOOKING)
+        assert asked == "Volentieri! Mi dice il suo nome e un numero di telefono?"  # no examples, no surname
+        assert state.chat_payloads == []  # nothing reached the LLM before the registration
+        await orch.reply("Mario Rossi, 333 1234567")
+        done = await orch.reply("sì")
+        assert done.startswith("Grazie Mario Rossi, è tutto a posto!") and "Confermi" in done
+        assert state.chat_payloads[0]["message"] == BOOKING  # the request is replayed, anonymised
+        await orch.aclose()
+
+
+async def test_streaming_booking_request_is_replayed_after_registration() -> None:
+    async with stub_be() as (url, state):
+        orch = make_orchestrator(url)
+        await orch.reply(BOOKING)
+        await orch.reply("Mario Rossi, 333 1234567")
+        done = "".join([t async for t in orch.stream_reply("sì")])
+        assert "è tutto a posto" in done and "Confermi" in done and len(state.chat_payloads) == 1
         await orch.aclose()
 
 
@@ -28,12 +67,14 @@ async def test_registration_sends_personal_data_only_to_customers_endpoint() -> 
     async with stub_be() as (url, state):
         orch = make_orchestrator(url)
         await orch.opening()
+        await orch.reply(BOOKING)
         await orch.reply("Mario Rossi, tre tre tre uno due tre quattro cinque sei sette")
         reply = await orch.reply("sì")
-        assert "Registrazione completata" in reply and "Mario Rossi" in reply
+        assert "è tutto a posto" in reply and "Mario Rossi" in reply
         assert orch.registered and orch.customer_id.startswith("cust_")
         assert list(state.customers.values()) == [{"name": "Mario Rossi", "phone": "+393331234567"}]
-        assert state.chat_payloads == []  # the LLM endpoint saw nothing of the registration phase
+        # the LLM endpoint saw only the booking request, none of the contact data
+        assert [p["message"] for p in state.chat_payloads] == [BOOKING]
         await orch.aclose()
 
 
@@ -70,20 +111,23 @@ async def test_streaming_and_sync_modes_agree() -> None:
         await orch.aclose()
 
 
-async def test_unregistered_caller_cannot_book_but_can_ask_for_the_menu() -> None:
-    async with stub_be() as (url, _):
+async def test_caller_who_gives_no_details_still_gets_menu_and_is_asked_again_to_book() -> None:
+    async with stub_be() as (url, state):
         orch = make_orchestrator(url)
+        await orch.reply("vorrei prenotare")
         for _ in range(3):  # three turns without contact details: give up like the chat bot
-            reply = await orch.reply("vorrei prenotare")
+            reply = await orch.reply("ma quanto costa?")
         assert "Senza questi dati" in reply and orch.phase is Phase.CHAT and not orch.registered
-        assert "registrazione" in await orch.reply("Vorrei prenotare un tavolo")
         assert "bruschetta" in (await orch.reply("che menu avete?")).lower()
+        assert "nome e un numero di telefono" in await orch.reply("allora vorrei prenotare")  # asked again
+        assert orch.phase is Phase.REGISTRATION and not state.customers and state.chat_payloads[-1]["message"] != "vorrei prenotare"
         await orch.aclose()
 
 
 async def test_failed_registration_can_be_retried_with_a_yes() -> None:
     async with stub_be() as (url, state):
         orch = make_orchestrator(url)
+        await orch.reply(BOOKING)
         await orch.reply("Mario Rossi, 333 1234567")
         import voicebot.orchestrator as module
 
@@ -96,7 +140,7 @@ async def test_failed_registration_can_be_retried_with_a_yes() -> None:
         reply = await orch.reply("sì")
         assert "raggiungere il server" in reply and orch.phase is Phase.REGISTRATION
         orch._backend.register_customer = original  # type: ignore[method-assign]
-        assert "Registrazione completata" in await orch.reply("sì")
+        assert "è tutto a posto" in await orch.reply("sì")
         assert len(state.customers) == 1
         await orch.aclose()
 
@@ -130,9 +174,10 @@ async def test_registration_can_be_disabled_like_on_the_be() -> None:
 async def test_english_conversation() -> None:
     async with stub_be() as (url, _):
         orch = make_orchestrator(url, language="en")
-        assert "first and last name" in await orch.opening()
+        assert await orch.opening() == "Welcome to Trattoria Bella Napoli! How can I help you?"
+        assert "your name and a phone number" in await orch.reply("I would like to book a table")
         assert "Is that correct" in await orch.reply("My name is John Smith, 333 1234567")
-        assert "Registration complete" in await orch.reply("yes")
+        assert "all set" in await orch.reply("yes")
         await orch.aclose()
 
 
@@ -142,13 +187,14 @@ async def test_reset_starts_a_new_customer_and_session() -> None:
         await _register(orch)
         old_session = orch.session_id
         orch.reset()
-        assert orch.phase is Phase.REGISTRATION and orch.session_id != old_session and not orch.registered
+        assert orch.phase is Phase.CHAT and orch.session_id != old_session and not orch.registered
         await orch.aclose()
 
 
 async def test_history_never_stores_contact_data_and_is_trimmed() -> None:
     async with stub_be() as (url, _):
         orch = make_orchestrator(url)
+        await orch.reply(BOOKING)
         await orch.reply("Mario Rossi, 333 1234567")
         assert all("333" not in m.content and "Mario" not in m.content for m in orch.history if m.role == "user")
         for i in range(30):

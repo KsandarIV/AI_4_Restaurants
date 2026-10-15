@@ -158,3 +158,14 @@ def test_the_windows_launcher_lists_the_simple_commands() -> None:
     bat = (Path(__file__).parent.parent / "voice.bat").read_text(encoding="utf-8")
     for command in ("local", "real", "doctor", "v2", "live", "test", "avvia.py"):
         assert command in bat
+
+
+def test_orb_has_no_halo_ring_or_hint_text_and_the_popup_closes_by_voice_only() -> None:
+    js = (SITE / "app.js").read_text(encoding="utf-8")
+    css = (SITE / "site.css").read_text(encoding="utf-8")
+    html = (SITE / "index.html").read_text(encoding="utf-8")
+    assert "createRadialGradient(CX, CY, R * 0.4" not in js and "anello morbido" not in js  # no translucent red circle
+    assert ".state-line { position: absolute" in css  # the state text is only for screen readers
+    assert "TOAST_MS = 4000" in js and 'case "reservation_confirmed"' in js
+    assert 'id="toast"' in html and "<button" not in html.split('id="toast"')[1].split("</aside>")[0]  # no way to click it away
+    assert '.assistant:not(.show-log) .log { display: none; }' in css and 'classList.add("show-log")' in js

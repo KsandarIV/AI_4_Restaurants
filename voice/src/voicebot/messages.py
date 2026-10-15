@@ -15,29 +15,19 @@ from typing import Literal
 Language = Literal["it", "en"]
 
 _IT: dict[str, str] = {
-    "welcome_register": (
-        "Benvenuto alla Trattoria Bella Napoli! Per gestire le prenotazioni mi servono il suo "
-        "nome e cognome e un numero di telefono. Può dirmeli insieme? Per esempio: Mario Rossi, "
-        "tre tre tre, uno due tre, quattro cinque sei sette. Li usiamo solo per la sua prenotazione."
-    ),
-    "welcome_chat": (
-        "Benvenuto alla Trattoria Bella Napoli! Come posso aiutarla? Posso prenotare, modificare "
-        "o cancellare un tavolo, dirle il menu o darle informazioni sul locale."
-    ),
-    "contact_example": (
-        "Mi servono nome e cognome e un numero di telefono, in un'unica frase. "
-        "Per esempio: Mario Rossi, tre tre tre, uno due tre, quattro cinque sei sette."
-    ),
+    "welcome_chat": "Benvenuto alla Trattoria Bella Napoli! Come posso aiutarla?",
+    "ask_contacts": "Volentieri! Mi dice il suo nome e un numero di telefono?",
+    "contact_example": "Mi servono il suo nome e un numero di telefono, anche in un'unica frase.",
     "problem_refusal": (
         "Capisco la preoccupazione: nome e telefono servono solo per confermare la prenotazione "
         "o avvisarla in caso di imprevisti."
     ),
     "problem_other": (
-        "Prima di tutto mi servono i suoi dati di contatto, poi potrà chiedermi tutto quello che vuole."
+        "Per la prenotazione mi servono prima il suo nome e un numero di telefono, poi proseguiamo."
     ),
     "problem_invalid_phone": "Il numero di telefono non sembra valido. Può ripeterlo cifra per cifra?",
     "problem_multiple_phones": "Ho sentito più numeri di telefono: quale devo usare per la prenotazione?",
-    "problem_unclear_name": "Non sono sicuro di aver capito il nome: può dirmi nome e cognome?",
+    "problem_unclear_name": "Non sono sicuro di aver capito il nome: può ripeterlo?",
     "problem_partial_phone": "Ho sentito {digits}. Continui pure con le altre cifre del telefono.",
     "only_phone_missing": "Grazie {name}! Mi manca solo il numero di telefono.",
     "only_name_missing": "Ho il numero {phone}. Mi manca solo il nome.",
@@ -49,10 +39,7 @@ _IT: dict[str, str] = {
         "Senza questi dati non posso gestire le prenotazioni, ma posso comunque rispondere a "
         "domande su menu, orari e informazioni sul locale. Come posso aiutarla?"
     ),
-    "registered": (
-        "Grazie {name}! Registrazione completata. Come posso aiutarla? Posso prenotare, modificare "
-        "o cancellare un tavolo, dirle il menu o darle informazioni sul locale."
-    ),
+    "registered": "Grazie {name}, è tutto a posto!",
     "register_failed": "{error} Quando vuole, dica sì per riprovare.",
     "err_unreachable": "Non riesco a raggiungere il server. Controlli che il sistema sia acceso.",
     "err_slow": "Il server ci sta mettendo troppo a rispondere. Riprovi tra poco.",
@@ -85,27 +72,17 @@ _IT: dict[str, str] = {
 }
 
 _EN: dict[str, str] = {
-    "welcome_register": (
-        "Welcome to Trattoria Bella Napoli! To manage bookings I need your first and last name and "
-        "a phone number. Can you tell me both together? For example: Mario Rossi, three three three, "
-        "one two three, four five six seven. I only use them for your booking."
-    ),
-    "welcome_chat": (
-        "Welcome to Trattoria Bella Napoli! How can I help? I can book, change or cancel a table, "
-        "tell you the menu or give you information about the restaurant."
-    ),
-    "contact_example": (
-        "I need your first and last name and a phone number, in one sentence. "
-        "For example: Mario Rossi, three three three, one two three, four five six seven."
-    ),
+    "welcome_chat": "Welcome to Trattoria Bella Napoli! How can I help you?",
+    "ask_contacts": "Happy to help! Can I have your name and a phone number?",
+    "contact_example": "I need your name and a phone number, even in one sentence.",
     "problem_refusal": (
         "I understand the concern: name and phone are only used to confirm the booking "
         "or to warn you if something changes."
     ),
-    "problem_other": "First I need your contact details, then you can ask me anything you like.",
+    "problem_other": "For the booking I first need your name and a phone number, then we carry on.",
     "problem_invalid_phone": "That phone number does not look valid. Can you repeat it digit by digit?",
     "problem_multiple_phones": "I heard more than one phone number: which one should I use for the booking?",
-    "problem_unclear_name": "I am not sure I got the name: can you tell me your first and last name?",
+    "problem_unclear_name": "I am not sure I got the name: can you say it again?",
     "problem_partial_phone": "I heard {digits}. Please go on with the other digits of the phone number.",
     "only_phone_missing": "Thank you {name}! I only need the phone number now.",
     "only_name_missing": "I have the number {phone}. I only need the name now.",
@@ -117,10 +94,7 @@ _EN: dict[str, str] = {
         "Without these details I cannot manage bookings, but I can still answer questions about "
         "the menu, opening hours and the restaurant. How can I help?"
     ),
-    "registered": (
-        "Thank you {name}! Registration complete. How can I help? I can book, change or cancel a "
-        "table, tell you the menu or give you information about the restaurant."
-    ),
+    "registered": "Thank you {name}, all set!",
     "register_failed": "{error} Whenever you want, say yes to try again.",
     "err_unreachable": "I cannot reach the server. Please check that the system is running.",
     "err_slow": "The server is taking too long to answer. Please try again shortly.",

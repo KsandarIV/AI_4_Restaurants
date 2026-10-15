@@ -20,14 +20,14 @@ from voicebot.v2 import amain, answer_once, build_conversation, hear_and_reply
 async def test_v2_runs_the_whole_chat_conversation_by_voice() -> None:
     async with stub_be() as (url, state):
         conversation = make_orchestrator(url)
-        stt, tts = FakeSTT(script=["Mario Rossi, 333 1234567", "sì", "Vorrei prenotare", "sì"]), FakeTTS()
+        stt, tts = FakeSTT(script=["Vorrei prenotare un tavolo per due", "Mario Rossi, 333 1234567", "sì", "sì"]), FakeTTS()
         replies = []
         for _ in range(4):
             heard, reply, audio = await answer_once(loud(3200), 16000, stt, conversation, tts)
             assert heard and reply and len(audio) > 0
             replies.append(reply)
-        assert "È corretto" in replies[0] and "Registrazione completata" in replies[1]
-        assert "Confermi" in replies[2] and "RES-STUB01" in replies[3]
+        assert "numero di telefono" in replies[0] and "È corretto" in replies[1]
+        assert "è tutto a posto" in replies[2] and "Confermi" in replies[2] and "RES-STUB01" in replies[3]
         assert state.customers and not any("333" in str(p.get("message")) for p in state.chat_payloads)
         assert all(p["client_type"] == "voice" for p in state.chat_payloads)
         await conversation.aclose()
@@ -121,10 +121,10 @@ async def test_text_mode_session_end_to_end(monkeypatch: pytest.MonkeyPatch, cap
     async with stub_be() as (url, state):
         monkeypatch.setenv("BACKEND_BASE_URL", url)
         monkeypatch.setenv("STT_BACKEND", "fake")
-        typed = iter(["Mario Rossi, 333 1234567", "sì", "che menu avete?", "q"])
+        typed = iter(["Vorrei prenotare un tavolo", "Mario Rossi, 333 1234567", "sì", "che menu avete?", "q"])
         monkeypatch.setattr("builtins.input", lambda prompt="": next(typed))
         code = await amain(argparse.Namespace(text=True, no_speaker=True, verbose=False))
         out = capsys.readouterr().out
         assert code == 0
-        assert "nome e cognome" in out and "Registrazione completata" in out and "bruschetta" in out.lower()
+        assert "Come posso aiutarla" in out and "è tutto a posto" in out and "bruschetta" in out.lower()
         assert len(state.customers) == 1

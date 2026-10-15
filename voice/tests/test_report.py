@@ -38,7 +38,8 @@ def test_spoken_date_and_location() -> None:
 
 async def _registered(url: str, language: str = "it") -> BackendOrchestrator:
     orch = make_orchestrator(url, language=language)
-    await orch.reply("Mario Rossi, 333 1234567" if language == "it" else "Mario Rossi, 333 1234567")
+    await orch.reply("Vorrei prenotare" if language == "it" else "I would like to book")  # triggers registration
+    await orch.reply("Mario Rossi, 333 1234567")
     await orch.reply("sì" if language == "it" else "yes")
     assert orch.registered
     return orch
@@ -65,7 +66,7 @@ async def test_booking_is_followed_by_a_spoken_report_and_a_last_yes() -> None:
         assert reservation["customer_id"] == orch.customer_id
         final = await orch.reply("sì, tutto corretto")
         assert final.startswith("Perfetto per Mario Rossi, grazie!") and orch._awaiting_final is None
-        assert len(state.chat_payloads) == 2  # the last "yes" never went to the LLM
+        assert len(state.chat_payloads) == 3  # replayed request + booking; the last "yes" never went to the LLM
         await orch.aclose()
 
 
@@ -147,7 +148,7 @@ async def test_the_session_forwards_reservation_events_to_the_client() -> None:
             events.append(payload)
 
         llm = make_orchestrator(url)
-        script = ["Mario Rossi, 333 1234567", "sì", "Vorrei prenotare un tavolo per due", "sì"]
+        script = ["Vorrei prenotare un tavolo per due", "Mario Rossi, 333 1234567", "sì", "sì"]
         session = make_session(llm, script=script, on_control=on_control)
         run = asyncio.create_task(session.run())
         for k in range(len(script)):
@@ -168,4 +169,40 @@ async def test_whisper_style_time_is_understood_by_the_stub() -> None:
         orch = await _registered(url)
         await orch.reply("Vorrei prenotare un tavolo per due persone domani alle 20 e 30")
         assert "alle venti e trenta" in await orch.reply("sì")
+        await orch.aclose()
+
+
+async def test_popup_events_carry_name_and_room_only_when_asked_and_close_on_the_final_yes() -> None:
+    async with stub_be() as (url, _):
+        orch = await _registered(url)
+        events: list[dict[str, str]] = []
+
+        async def hook(payload: dict[str, str]) -> None:
+            events.append(payload)
+
+        orch.on_event = hook
+        await orch.reply("Vorrei prenotare un tavolo per due domani alle venti")
+        await orch.reply("sì")
+        booked = next(e for e in events if e["event"] == "reservation")
+        assert booked["name"] == "Mario Rossi" and booked["status"] == "CONFIRMED"
+        assert booked["area"] == ""  # the caller never named a room: the pop-up shows none
+        assert not any(e["event"] == "reservation_confirmed" for e in events)  # still waiting for the final yes
+        await orch.reply("sì, tutto corretto")
+        assert [e["event"] for e in events].count("reservation_confirmed") == 1
+        await orch.aclose()
+
+
+async def test_popup_shows_the_room_the_caller_asked_for() -> None:
+    async with stub_be() as (url, _):
+        orch = await _registered(url)
+        events: list[dict[str, str]] = []
+
+        async def hook(payload: dict[str, str]) -> None:
+            events.append(payload)
+
+        orch.on_event = hook
+        await orch.reply("Vorrei prenotare in terrazza un tavolo per due domani alle venti")
+        await orch.reply("sì")
+        booked = next(e for e in events if e["event"] == "reservation")
+        assert booked["area"] == "Terrazza"
         await orch.aclose()

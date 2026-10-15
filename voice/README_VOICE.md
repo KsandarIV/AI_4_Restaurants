@@ -98,7 +98,7 @@ voice/
 │   ├── anonymizer.py        # PII removal with restorable [TYPE_N] placeholders (+ stream restorer)
 │   ├── pii.py               # stateless last-line PII net on everything leaving for the BE
 │   ├── messages.py          # everything the bot says without the LLM (it/en)
-│   ├── prompts.py           # the agent's role/actions prompt (English)
+│   ├── prompts.py           # the agent's role/actions prompt (Italian, answers in the customer's language)
 │   ├── backend.py           # BackendClient: retries, error mapping, SSE, /api/customers
 │   ├── chat_service.py      # optional v2 transport through chat/api.py
 │   ├── v2.py                # on-demand voice chat (mic -> STT -> chat -> TTS -> speaker)
@@ -115,17 +115,30 @@ voice/
 └── tests/                   # 150+ tests, no models and no network needed
 ```
 
-## The conversation (identical to the chat bot)
+## The conversation
 
-1. **The bot speaks first** and asks for name + phone (same text as the chat, adapted for speech).
-2. **Registration phase** — `contacts.py`: extract name/phone from one utterance (digits can be
-   spoken: "tre tre tre uno due tre…"), read the number back digit by digit, wait for yes/no,
-   accept corrections, give up after 3 empty turns. Then `POST /api/customers` → anonymous
-   `customer_id`. **The LLM never takes part and never sees these data.**
+1. **Short welcome**: "Benvenuto alla Trattoria Bella Napoli! Come posso aiutarla?" Nothing is asked yet;
+   menu and information work for anybody.
+2. **Registration only when the caller talks about booking** (`wants_booking` in `contacts.py`: "prenotare",
+   "tavolo", "book"...). The bot asks "name and a phone number" (no examples; a surname is accepted if given,
+   never required): extract name/phone from one utterance (digits can be spoken), read the number back digit by
+   digit, wait for yes/no, accept corrections, give up after 3 empty turns (it asks again at the next booking
+   request). Then `POST /api/customers` → anonymous `customer_id`. **The LLM never takes part and never sees
+   these data**; the request that started it is kept and sent to the BE (anonymised) right after, so the caller
+   does not repeat it.
 3. **Chat phase** — every utterance: `anonymizer.anonymize()` → BE → `restore()` → TTS.
    Placeholders (`[NOME_1]`, `[TELEFONO_1]`) have the chat bot's exact format, which the BE recognises.
-4. **No local intent shortcuts.** The BE agent decides everything: tool calls, the yes/no confirmation
-   of bookings, allergy answers, the "not registered" rule.
+4. **No local intent shortcuts** beyond "when to ask for contact data". The BE agent decides everything: tool
+   calls, the yes/no confirmation of bookings, allergy answers.
+5. **Booking pop-up on the site**: each booking/change shows a small summary (name, date, time, guests, room only
+   if the caller asked for one). It closes **4 seconds after the caller's spoken final "yes"**
+   (`reservation_confirmed` event) and never by click; a cancellation or hanging up closes it at once.
+   The live transcript under the orb is shown only in local test mode.
+
+**Agent prompt** (`prompts.py`): Italian, answers in the customer's language when it knows it (Italian by default),
+asks about a room before confirming, refuses past dates. The BE only reads the last user message, so it is the
+specification for the BE team until `backend/graph/prompts.py` adopts it. Speech recognition stays tied to
+`STT_LANGUAGE` / `VOICE_LANGUAGE`: other languages are understood by the LLM only if Whisper transcribes them.
 
 ## Core loop (producer–consumer)
 

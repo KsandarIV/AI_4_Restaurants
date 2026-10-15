@@ -106,3 +106,16 @@ def spoken_location(location: str | None, language: str) -> str:
     if not location:
         return ""
     return _LOCATIONS[normalize_language(language)].get(location.strip().lower(), location)
+
+
+_AREAS = {
+    "it": {"interno": "Sala interna", "terrazza": "Terrazza", "giardino": "Giardino"},
+    "en": {"interno": "Indoor room", "terrazza": "Terrace", "giardino": "Garden"},
+}
+
+
+def spoken_area(location: str | None, language: str) -> str:
+    """The room as a short label for the on-screen summary ('' when unknown)."""
+    if not location:
+        return ""
+    return _AREAS[normalize_language(language)].get(location.strip().lower(), location)

@@ -198,6 +198,20 @@ _PROBLEM_KEYS = {
 }
 
 
+_BOOKING_INTENT = re.compile(
+    r"\b(?:prenot\w*|riserv\w*|tavolo|posti?\s+per|book\w*|reserv\w*|table\s+for|a\s+table)\b",
+    re.I,
+)
+
+
+def wants_booking(text: str) -> bool:
+    """True when the caller talks about booking ("vorrei prenotare", "a table for two").
+
+    It only decides WHEN to ask for name and phone: it never reaches the LLM and answers nothing.
+    """
+    return bool(_BOOKING_INTENT.search(text))
+
+
 _QUALIFIER = re.compile(r"\b(?:ma|però|pero|but|except|tranne)\b|\d", re.I)
 
 
@@ -229,7 +243,7 @@ class RegistrationDialog:
 
     def opening(self) -> str:
         """The first thing the bot says."""
-        return say(self.language, "welcome_register")
+        return say(self.language, "ask_contacts")
 
     def handle(self, text: str) -> tuple[str, str | None]:
         """Process one utterance of the registration phase."""
