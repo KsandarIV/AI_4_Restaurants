@@ -213,7 +213,7 @@ def test_orb_has_no_halo_or_hint_text_has_the_golden_ring_and_the_popup_closes_b
     assert ".state-line { position: absolute" in css  # the state text is only for screen readers
     assert "TOAST_MS = 4000" in js and 'case "reservation_confirmed"' in js
     assert 'id="toast"' in html and "<button" not in html.split('id="toast"')[1].split("</aside>")[0]  # no way to click it away
-    assert ".dock #orb" in css  # the orb sits where the voice button was
+    assert ".orb-wrap" in css and ".morph" in css and "@keyframes orb-float" in css  # a big floating orb, morphed from the button
 
 
 def test_the_test_page_has_the_same_golden_ring_and_popup() -> None:
@@ -221,3 +221,14 @@ def test_the_test_page_has_the_same_golden_ring_and_popup() -> None:
     assert "function drawRing" in page and "createRadialGradient(CX, CY, R * 0.4" not in page and "anello morbido" not in page
     assert "TOAST_MS = 4000" in page and "reservation_confirmed" in page and 'id="toast"' in page
     assert ".state { position: absolute" in page  # no hint text under the orb
+
+
+def test_the_button_morphs_into_the_orb_and_ring_and_dots_appear_in_order() -> None:
+    js = (SITE / "app.js").read_text(encoding="utf-8")
+    html = (SITE / "index.html").read_text(encoding="utf-8")
+    assert 'id="morph"' in html and 'id="orb-wrap"' in html
+    for needle in ("function orbIn", "function orbOut", "function startBirth", "document.querySelector(\".hero\")", "FLOAT = 18"):
+        assert needle in js, needle
+    # the ring is drawn BEFORE the blob (it grows out from behind it) and the dots are born at random moments inside it
+    assert js.index("drawRing(t, tms);  // behind the orb") < js.index("// blob")
+    assert "d.at = 250 + Math.random() * 1700" in js and "const born = birthT" in js

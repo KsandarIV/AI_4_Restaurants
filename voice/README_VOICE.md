@@ -36,7 +36,7 @@ when you interrupt.
 Open `http://localhost:8003/` (local mode prints the exact address). It has the restaurant look of
 `frontend/` (copied stylesheet): menu with filters, hours/address/phone from the BE, the voice
 assistant and **My reservations**. Bottom right there are two buttons: **Scrivi** (the chat bot) and **Prenota a voce**;
-the voice button turns into the orb while the call lasts (tap the orb to hang up; no panel, no transcript: that is on
+the voice button **morphs** (gradually) into a big floating orb hooked to the lower edge of the red band, with the golden ring growing from behind it and the dots born inside it; tapping the orb hangs up and it shrinks back into the button (no panel, no transcript: that is on
 `/test-voice`). The chat window goes through `/site/chat/*` to the CHAT service and answers "non è collegato" unless
 `CHAT_SERVICE_URL` is set.
 

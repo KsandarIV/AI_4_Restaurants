@@ -135,12 +135,30 @@ a { color: var(--accent); }
 /* orb: the animation speaks for itself, the state line stays only for screen readers */
 .state-line { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* bottom-right dock: chat button + voice button; the voice button turns into the orb during a call */
-.dock { position: fixed; right: 20px; bottom: 20px; z-index: 30; display: flex; gap: 10px; align-items: flex-end; }
+.dock { position: fixed; right: 20px; bottom: 20px; z-index: 40; display: flex; gap: 10px; align-items: flex-end; }
 .dock .fab { position: static; }
 .fab-chat { background: var(--surface); color: var(--accent); border: 2px solid var(--accent); box-shadow: var(--shadow); }
 .fab-chat:hover { background: var(--accent); color: #fff; }
-.dock #orb { width: 180px; height: 180px; cursor: pointer; border-radius: 50%; -webkit-tap-highlight-color: transparent; }
-.dock #orb[hidden], .dock .fab[hidden] { display: none !important; }
+/* the voice button turns into the orb: a "morph" circle travels and grows from the button, then the canvas fades in over it */
+.morph { position: fixed; z-index: 31; left: 0; top: 0; width: 0; height: 0; border-radius: 999px; background: var(--accent); color: #fff;
+  box-shadow: var(--shadow); display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none;
+  font-family: system-ui, sans-serif; font-weight: 600; white-space: nowrap;
+  transition: left .95s cubic-bezier(.22, .9, .25, 1), top .95s cubic-bezier(.22, .9, .25, 1), width .95s cubic-bezier(.22, .9, .25, 1),
+    height .95s cubic-bezier(.22, .9, .25, 1), border-radius .95s cubic-bezier(.22, .9, .25, 1), box-shadow .95s ease, opacity .55s ease; }
+.morph[hidden] { display: none !important; }
+.morph .lbl { position: relative; z-index: 1; transition: opacity .3s ease; }
+.morph::after { content: ""; position: absolute; inset: 0; border-radius: inherit; opacity: 0; transition: opacity .7s ease .15s;
+  background: radial-gradient(circle at 36% 30%, #d95f43 0%, #b3341f 60%, #8a2615 100%); }
+.morph.expanded { box-shadow: 0 0 46px rgba(179, 52, 31, .55); }
+.morph.expanded::after { opacity: 1; }
+.morph.expanded .lbl { opacity: 0; }
+.morph.fading { opacity: 0; }
+.orb-wrap { position: fixed; z-index: 32; left: 0; top: 0; width: 0; height: 0; opacity: 0; pointer-events: none; transition: opacity .5s ease; }
+.orb-wrap.on { opacity: 1; }
+.orb-wrap canvas#orb { display: block; width: 100%; height: 100%; border-radius: 50%; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  animation: orb-float 5.4s ease-in-out infinite; }
+.orb-wrap.on canvas#orb { pointer-events: auto; }
+@keyframes orb-float { 0%, 100% { transform: translateY(-18px); } 50% { transform: translateY(18px); } }
 .orb-note { position: fixed; right: 20px; bottom: 84px; z-index: 31; max-width: min(320px, calc(100vw - 40px)); margin: 0; padding: 10px 14px; background: #fdecea; color: #8a2615; border: 1px solid #f0c4bd; border-radius: 14px; font-family: system-ui, sans-serif; font-size: .85rem; }
 .orb-note[hidden] { display: none !important; }
 .chat-panel { position: fixed; right: 20px; bottom: 84px; z-index: 40; width: min(400px, calc(100vw - 24px)); height: min(520px, calc(100vh - 110px)); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; font-family: system-ui, sans-serif; }

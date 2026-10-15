@@ -249,7 +249,72 @@
     showNote(key === "st_error" ? text : "");
   }
   // The "book by voice" button turns into the orb while the call lasts; tapping the orb hangs up.
-  function showOrb(on) { orb.hidden = !on; $("assistant-fab").hidden = on; }
+  const FLOAT = 18;  // px: the orb floats up and down by this much (keep in sync with @keyframes orb-float)
+  const wrap = $("orb-wrap"), morph = $("morph"), fab = $("assistant-fab");
+  let orbOn = false, birthT = 0, lastTarget = null, timers = [];
+  const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+  const clearTimers = () => { timers.forEach(clearTimeout); timers = []; };
+  function box(el, x, y, w, h, radius) {
+    el.style.left = x + "px"; el.style.top = y + "px"; el.style.width = w + "px"; el.style.height = h + "px"; el.style.borderRadius = radius;
+  }
+  // Where the orb lives: bottom right, hooked to the lower edge of the red band. At the top of its float a third of the
+  // orb is over the band, the rest stays below. If the band scrolls away the orb stays under the top bar.
+  function orbTarget() {
+    const S = Math.max(150, Math.min(235, window.innerWidth * 0.43, window.innerHeight * 0.32));  // canvas size on screen
+    const D = S * (2 * R) / 520;  // visible diameter of the blob
+    const ringHalf = S * 0.42;  // outer radius of the golden ring
+    const band = document.querySelector(".hero").getBoundingClientRect().bottom;
+    let cy = band + D / 6 + FLOAT;
+    cy = Math.max(64 + ringHalf, Math.min(window.innerHeight - ringHalf - 8, cy));
+    return { S, D, cx: window.innerWidth - 22 - ringHalf, cy };
+  }
+  function placeOrb() {
+    const tg = orbTarget();
+    lastTarget = tg;
+    wrap.style.left = (tg.cx - tg.S / 2) + "px"; wrap.style.top = (tg.cy - tg.S / 2) + "px";
+    wrap.style.width = tg.S + "px"; wrap.style.height = tg.S + "px";
+    return tg;
+  }
+  let placing = false;
+  function replace() { if (orbOn && !placing) { placing = true; requestAnimationFrame(() => { placing = false; placeOrb(); }); } }
+  window.addEventListener("scroll", replace, { passive: true });
+  window.addEventListener("resize", replace);
+
+  function orbIn() {  // button -> orb
+    clearTimers();
+    const r = fab.getBoundingClientRect();
+    const tg = placeOrb();
+    morph.style.transition = "none";
+    morph.classList.remove("expanded", "fading");
+    box(morph, r.left, r.top, r.width, r.height, "999px");
+    morph.style.opacity = "1";
+    $("morph-label").textContent = fab.textContent.trim();
+    morph.hidden = false; fab.style.visibility = "hidden"; orbOn = true;
+    void morph.offsetWidth;
+    morph.style.transition = "";
+    morph.classList.add("expanded");
+    box(morph, tg.cx - tg.D / 2, tg.cy - tg.D / 2, tg.D, tg.D, "50%");
+    later(() => { wrap.classList.add("on"); startBirth(); }, 680);   // the canvas fades in over the circle
+    later(() => morph.classList.add("fading"), 1000);                // the circle dissolves into the live orb
+    later(() => { morph.hidden = true; }, 1700);
+  }
+  function orbOut() {  // orb -> button
+    if (!orbOn) return;
+    clearTimers();
+    orbOn = false; birthT = 0;
+    const tg = lastTarget || orbTarget();
+    const r = fab.getBoundingClientRect();
+    morph.style.transition = "none";
+    morph.classList.remove("fading"); morph.classList.add("expanded");
+    box(morph, tg.cx - tg.D / 2, tg.cy - tg.D / 2, tg.D, tg.D, "50%");
+    morph.style.opacity = "1"; morph.hidden = false;
+    void morph.offsetWidth;
+    morph.style.transition = "";
+    wrap.classList.remove("on");
+    later(() => { morph.classList.remove("expanded"); box(morph, r.left, r.top, r.width, r.height, "999px"); }, 140);
+    later(() => { fab.style.visibility = ""; morph.hidden = true; }, 1200);
+  }
+  function showOrb(on) { if (on) orbIn(); else orbOut(); }
   function startCall() {
     if (wantLive) return;
     if (!window.isSecureContext) { showNote(t("insecure", { p: location.port || "8003", h: location.host })); return; }
@@ -275,6 +340,8 @@
     const preparing = preparingSince && mode !== "speaking" ? Math.min(1, (now - preparingSince) / 1400) : 0;
     if (preparingSince && now - preparingSince > 9000) preparingSince = 0;  // reply without audio: do not stay thick
     const speaking = mode === "speaking";
+    const bornT = birthT ? Math.max(0, Math.min(1, (now - birthT - 150) / 1900)) : 0;
+    const grow = 1 - Math.pow(1 - bornT, 2.2);  // ease-out: it grows out from behind the orb, then settles and stays at its size
     ringW = ease(ringW, speaking ? 18 : 5 + 17 * preparing, 0.07);
     ringLight = ease(ringLight, speaking ? 0.7 : 0.45 + 0.4 * preparing, 0.07);
     ringAmp = ease(ringAmp, speaking ? 13 : 0, 0.06);
@@ -283,7 +350,7 @@
     const pts = [];
     for (let i = 0; i <= 160; i++) {
       const th = (i / 160) * Math.PI * 2;
-      const rr = RING_R + ringAmp * ringWave(th + ringPhase * 0.4, t);
+      const rr = (R * 0.86 + (RING_R - R * 0.86) * grow) + ringAmp * ringWave(th + ringPhase * 0.4, t);
       pts.push([CX + rr * Math.cos(th), CY + rr * Math.sin(th)]);
     }
     const path = () => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); };
@@ -293,17 +360,24 @@
       c.addColorStop(0, a); c.addColorStop(0.5, b); c.addColorStop(1, a);
       return c;
     };
+    if (grow <= 0) return;
+    g.save(); g.globalAlpha = Math.min(1, grow * 2.5);
     g.lineJoin = "round";
-    path(); g.lineWidth = ringW; g.strokeStyle = shade("#7a5a14", "#a8821f"); g.stroke();            // thick dark gold edges
-    path(); g.lineWidth = Math.max(1.5, ringW * ringLight); g.strokeStyle = shade("#f6dd8f", "#e3b84d"); g.stroke();  // light inside
+    path(); g.lineWidth = ringW * (0.5 + 0.5 * grow); g.strokeStyle = shade("#7a5a14", "#a8821f"); g.stroke();            // thick dark gold edges
+    path(); g.lineWidth = Math.max(1.5, ringW * ringLight * (0.5 + 0.5 * grow)); g.strokeStyle = shade("#f6dd8f", "#e3b84d"); g.stroke();  // light inside
+    g.restore();
   }
   const dots = Array.from({ length: 16 }, (_, i) => {
     const base = R * (0.78 + Math.random() * 0.34);
     return {
       a: (i / 16) * Math.PI * 2, r: base, base,
-      s: 3.5 + Math.random() * 2.5, o: 0.5 + Math.random() * 0.4
+      s: 3.5 + Math.random() * 2.5, o: 0.5 + Math.random() * 0.4, at: 0
     };
   });
+  function startBirth() {  // the orb has just appeared: the ring grows from behind it, the dots are born inside it, one by one
+    birthT = performance.now();
+    for (const d of dots) { d.at = 250 + Math.random() * 1700; d.r = R * 0.04; d.a = Math.random() * Math.PI * 2; }
+  }
   function wave(theta, t, amp) {
     return amp * (Math.sin(3 * theta + t * 1.7) * 0.55
                 + Math.cos(5 * theta - t * 2.3) * 0.30
@@ -317,6 +391,7 @@
     const spin = mode === "thinking" ? 2.6 : 0.15 + active * 1.6 + (mode === "speaking" ? 1.2 : 0);
     const amp = mode === "heard" ? 7 : 5 + level * 34 + (mode === "speaking" ? 10 : 0);
     const rot = mode === "thinking" ? t * 0.6 : 0;  // il pensiero "ruota" piano
+    drawRing(t, tms);  // behind the orb: at birth it grows out from under it
     // blob
     const grad = g.createRadialGradient(CX - 40, CY - 50, 20, CX, CY, R + 40);
     grad.addColorStop(0, "#d95f43"); grad.addColorStop(0.6, "#b3341f"); grad.addColorStop(1, "#8a2615");
@@ -337,6 +412,8 @@
     const loading = mode === "thinking" ? 1 : 0;
     const riding = mode === "speaking" ? 1 : 0;
     for (const d of dots) {
+      const born = birthT ? Math.min(1, (tms - birthT - d.at) / 500) : 0;
+      if (born <= 0) { d.r = R * 0.04; continue; }
       d.a += 0.003 * spin * (0.7 + d.r / R) + loading * 0.05;
       let target = heard ? R * 1.02 : d.base;
       if (loading) target = R * 0.22;                       // tutti al centro: caricamento
@@ -344,10 +421,9 @@
       d.r += (target - d.r) * 0.12;                         // ease: fluido, mai rigido
       const x = CX + d.r * Math.cos(d.a), y = CY + d.r * Math.sin(d.a);
       g.beginPath(); g.arc(x, y, d.s, 0, Math.PI * 2);
-      g.fillStyle = `rgba(255,255,255,${Math.min(0.95, d.o + 0.15)})`;
+      g.fillStyle = `rgba(255,255,255,${Math.min(0.95, d.o + 0.15) * born})`;
       g.fill();
     }
-    drawRing(t, tms);
     // increspature a ogni pacchetto audio ricevuto (sta parlando)
     ripples = ripples.filter(rp => rp.a > 0.02);
     for (const rp of ripples) {
@@ -437,7 +513,7 @@
       default: break;
     }
   }
-  window.voiceSite = { handle: onMessage };  // lets a console / test feed server events to the page
+  window.voiceSite = { handle: onMessage, orbIn, orbOut };  // lets a console / test feed server events to the page
   function connect() {
     ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/voice");
     ws.binaryType = "arraybuffer";
