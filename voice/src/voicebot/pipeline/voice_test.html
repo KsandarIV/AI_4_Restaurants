@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice-bot — Prova vocale</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; max-width: 720px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 20px; } .mut { color: #555; font-size: 13px; }
+  button { font-size: 16px; padding: 10px 22px; border-radius: 8px; border: 0; cursor: pointer; }
+  #talk { background: #0b5cad; color: #fff; } #talk.live { background: #c00; }
+  #stato { background: #f4f6f8; border-radius: 8px; padding: 12px; margin: 12px 0; min-height: 60px; }
+  #vu { height: 12px; background: #eee; border-radius: 6px; overflow: hidden; margin: 8px 0; }
+  #vubar { height: 100%; width: 0%; background: #0b5cad; }
+  code { background: #f4f6f8; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>Voice-bot — prova vocale</h1>
+<p class="mut">Parla nel microfono: l'audio va al server (<code>/ws/voice</code>, PCM 16 kHz) e la
+risposta torna in questa pagina. Il microfono del browser funziona solo da
+<code>localhost</code>/HTTPS: apri questa pagina sulla macchina voice
+(<code>http://localhost:8003/prova-vocale</code>). Da altre macchine usa la v2
+(<code>python -m voicebot.v2</code>, microfono locale senza browser).</p>
+<p>WS: <code id="wsurl"></code></p>
+<button id="talk">🎤 Parla</button>
+<div id="vu"><div id="vubar"></div></div>
+<div id="stato">Premi “Parla”, parla, ripremi per fermare e ascoltare la risposta.</div>
+<script>
+const SR = 16000;
+const wsurl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/voice";
+document.getElementById("wsurl").textContent = wsurl;
+const stato = document.getElementById("stato"), btn = document.getElementById("talk"), vu = document.getElementById("vubar");
+let ws = null, ctx = null, stream = null, proc = null, live = false, playQ = [], playing = false;
+
+function msg(t) { stato.innerHTML = t; }
+function rms(buf) { let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i]; return Math.sqrt(s / buf.length); }
+
+async function playLoop() {
+  if (playing) return; playing = true;
+  const actx = ctx;
+  while (playQ.length) {
+    const chunk = playQ.shift();
+    const n = chunk.length / 2, dv = new DataView(chunk), f = actx.createBuffer(1, n, SR), d = f.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = dv.getInt16(i * 2, true) / 32768;
+    const src = actx.createBufferSource(); src.buffer = f; src.connect(actx.destination); src.start();
+    msg("🔊 L'assistente sta parlando… (parla pure sopra per interrompere)");
+    await new Promise(r => src.onended = r);
+  }
+  playing = false; msg("Pronto.");
+}
+
+btn.onclick = async () => {
+  if (live) { await stop(); return; }
+  try {
+    ws = new WebSocket(wsurl); ws.binaryType = "arraybuffer";
+    await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+    ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SR });
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: SR, channelCount: 1 } });
+    const src = ctx.createMediaStreamSource(stream);
+    proc = ctx.createScriptProcessor(2048, 1, 1);
+    proc.onaudioprocess = ev => {
+      const f = ev.inputBuffer.getChannelData(0);
+      vu.style.width = Math.min(100, rms(f) * 400) + "%";
+      const b = new ArrayBuffer(f.length * 2), dv = new DataView(b);
+      for (let i = 0; i < f.length; i++) dv.setInt16(i * 2, Math.max(-32768, Math.min(32767, f[i] * 32768)), true);
+      if (ws && ws.readyState === 1) ws.send(b);
+    };
+    src.connect(proc); proc.connect(ctx.destination);
+    ws.onmessage = ev => {
+      if (typeof ev.data === "string") {
+        try { if (JSON.parse(ev.data).event === "barge_in") msg("✋ Interrotto: ti ascolto."); } catch (e) {}
+      } else { playQ.push(ev.data); playLoop(); }
+    };
+    live = true; btn.textContent = "⏹ Ferma e ascolta"; btn.classList.add("live");
+    msg("🎤 Ti ascolto… premi “Ferma e ascolta” quando hai finito.");
+  } catch (e) { msg("Errore: " + e + " (microfono solo da localhost/HTTPS)"); }
+};
+
+async function stop() {
+  live = false; btn.textContent = "🎤 Parla"; btn.classList.remove("live");
+  try { if (proc) proc.disconnect(); if (stream) stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  msg("Elaboro…");
+}
+</script>
+</body>
+</html>

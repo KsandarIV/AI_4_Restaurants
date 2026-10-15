@@ -19,3 +19,11 @@ def test_documentazione_exists() -> None:
     for expected in ("Checklist test incrociati", "Punti di forza", "gemma4:12b",
                      "BACKEND_BASE_URL", "booking_code"):
         assert expected in doc
+
+
+def test_voice_test_page() -> None:
+    html = (Path(__file__).parent.parent / "src" / "voicebot" / "pipeline" / "voice_test.html").read_text(
+        encoding="utf-8"
+    )
+    for expected in ("/ws/voice", "getUserMedia", "AudioContext", "prova-vocale", "localhost"):
+        assert expected in html

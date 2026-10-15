@@ -48,6 +48,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
         return (Path(__file__).with_name("tech.html")).read_text(encoding="utf-8")
 
+    @app.get("/prova-vocale", response_class=HTMLResponse, include_in_schema=False)
+    async def voice_test_page() -> str:
+        """Pagina di test microfono (solo localhost/HTTPS per i limiti browser)."""
+        from pathlib import Path
+
+        return (Path(__file__).with_name("voice_test.html")).read_text(encoding="utf-8")
+
     @app.get("/ready")
     async def ready() -> Any:
         backend = BackendClient(
