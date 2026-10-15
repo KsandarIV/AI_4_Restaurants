@@ -69,8 +69,11 @@ python setup\setup_env.py
 copy .env.example .env
 REM poi imposta BACKEND_BASE_URL con l'IP LAN del BE
 
-REM avvio voice con il venv condiviso (dalla root)
+REM v1 real-time (WebSocket full-duplex con barge-in)
 .venv\Scripts\python -m voicebot   # ws://localhost:8003/ws/voice
+
+REM v2 on-demand (come il chatbot: domanda->risposta, INVIO per parlare)
+.venv\Scripts\python -m voicebot.v2
 ```
 
 Senza modelli (CI/demo): `STT_BACKEND=fake TTS_BACKEND=fake` nel `.env`.
