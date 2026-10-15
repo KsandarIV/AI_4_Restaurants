@@ -65,3 +65,9 @@ Streamlit :8501 = stessa logica in UI autonoma.
 da `localhost`/HTTPS. Da LAN-IP il browser lo blocca: per la voce da altre macchine
 usare la v2 (mic locale, nessun browser) o aprire la pagina di test in localhost
 sulla macchina voice.
+
+## Materiale di studio e presentazione (voice)
+
+`docs/studio/voice/`: `MANUALE_TECNICO.md` (comandi per componente, test, sessioni live, **configurazioni di avvio** a tre macchine e alternative),
+`PRESENTAZIONE.md` (copione passo per passo), `flowchart_flusso_codice.svg` (flowchart verticale: avvio → chiamata → chiusura) e le mini-presentazioni PDF.
+

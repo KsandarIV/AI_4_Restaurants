@@ -89,3 +89,8 @@ keep the long part (rules + tools) cached. Voice-side workaround: all unregister
 pays the cost once (`WARM_BACKEND`). Also: some replies announce instead of answer ("Posso mostrarle i piatti...", "Chiamo get_menu...");
 `voice/src/voicebot/toolguard.py` drops and retries them once.
 
+## 2026-10-16 — VOICE: materiale di presentazione
+`docs/studio/voice/`: `PRESENTAZIONE.md` (copione passo per passo) + 4 mini-presentazioni PDF (stack/venv/LAN, flusso del codice, storia e fix da git, il BE e i punti di contatto) + `00_presentazione_completa.pdf` (47 slide). Sorgenti in `_sorgenti/` (`python build.py`, serve solo Edge/Chrome).
+To do (BE team), emerso preparandole: `/api/chat/stream` e' `async` ma chiama `process_message` in modo bloccante (il BE non risponde nemmeno a `/api/health` mentre l'LLM lavora).
+Aggiunti in `docs/studio/voice/`: `MANUALE_TECNICO.md` (comandi per componente, test, sessioni live, configurazioni di avvio), `flowchart_flusso_codice.svg` (+ `05_flowchart_verticale.pdf`), sezione sull'entrypoint in `entrypoint/README.md`.
+

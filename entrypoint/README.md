@@ -16,6 +16,24 @@ Fa tutto in ordine e si ferma con istruzioni chiare al primo problema:
 | 6 | attesa BE | solo chat/voice: parte solo quando il BE risponde |
 | 7 | avvio | componente in foreground, log live, `Ctrl+C` per fermare |
 
+### Se un passo si ferma
+
+| Passo | Cosa succede se va storto | Cosa fare |
+|---|---|---|
+| `git pull` | si ferma e stampa l'errore (conflitti o rete) | `git status`; **non forzare**; chiedere al gruppo |
+| identità | se il ruolo non è noto lo chiede (una volta) | rispondere; poi non lo chiede più |
+| setup | si ferma: «setup non completato» | sistemare l'errore e **rilanciare** `avvia.py` (i passi già fatti si saltano) |
+| `.env` | errore solo se manca `.env.example` | ripristinare il file dal repo |
+| firewall | **non blocca**: stampa il comando `netsh` | eseguirlo da amministratore |
+| attesa del BE | dopo 180 s: «BE assente, componente NON avviato» | accendere il BE e rilanciare (o `--no-wait`) |
+| avvio | `Ctrl+C` ferma il componente e i servizi extra | — |
+
+`--status` e `--attendi` interrogano le altre macchine con gli IP di `lan/lan_config.json`. Quegli IP sono **esempi**
+finché non li fissi: con IP statici, su ogni macchina `python lan\machine_setup.py --pubblica-ip`, poi un solo PC
+fa commit e push di `lan/lan_config.json` e gli altri `git pull`.
+
+Manuale completo (comandi, test, configurazioni di avvio): [docs/studio/voice/MANUALE_TECNICO.md](../docs/studio/voice/MANUALE_TECNICO.md).
+
 Varianti:
 
 ```bat
