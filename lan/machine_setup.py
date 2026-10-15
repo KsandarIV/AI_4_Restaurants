@@ -274,24 +274,54 @@ def configure_env(role: str, config: dict[str, object], be_host: str | None) -> 
     return True
 
 
-def firewall_hint(role: str, config: dict[str, object]) -> None:
-    """Stampa (e prova) le regole firewall Windows per la porta del ruolo."""
+def _service_argv(svc: dict[str, object]) -> list[str]:
+    argv = [str(a) for a in svc["argv"]]  # type: ignore[index]
+    if argv and argv[0].startswith(".venv"):
+        argv[0] = str(ROOT / argv[0].replace("/", os.sep))
+    return argv
+
+
+def _service_env(svc: dict[str, object]) -> dict[str, str]:
+    """Env del servizio: BE_URL/IP-BE presi dal .env di QUESTA macchina."""
+    be_host = read_env().get("BACKEND_BASE_URL", "http://192.168.1.10:8000").split("://")[1].split(":")[0]
+    env = os.environ.copy()
+    for key, val in dict(svc.get("env", {})).items():
+        env.setdefault(key, str(val).replace("192.168.1.10", be_host))
+    return env
+
+
+def _service_cwd(svc: dict[str, object]) -> Path:
+    return ROOT / str(svc.get("cwd", "."))
+
+
+def role_ports(role: str, config: dict[str, object]) -> list[int]:
+    """Tutte le porte del ruolo (principale + servizi extra)."""
     node = config[role]
     assert isinstance(node, dict)
-    port = int(node.get("port", 0))
-    rule = f"AI4R-{role}-{port}"
-    cmd = (f'netsh advfirewall firewall add rule name="{rule}" '
-           f'dir=in action=allow protocol=TCP localport={port}')
-    print(f"[lan] firewall: serve la porta {port}/TCP in ingresso. Comando da admin:")
-    print(f"      {cmd}")
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, shell=True)
-        if proc.returncode == 0:
-            log("regola firewall applicata.")
-        else:
-            log("regola NON applicata (serve prompt amministratore): eseguila a mano.")
-    except Exception as exc:
-        log(f"regola NON applicata ({exc}): eseguila a mano da admin.")
+    ports = [int(node.get("port", 0))]
+    for svc in node.get("extra_services", []):
+        assert isinstance(svc, dict)
+        if svc.get("port"):
+            ports.append(int(svc["port"]))
+    return [p for p in ports if p > 0]
+
+
+def firewall_hint(role: str, config: dict[str, object]) -> None:
+    """Stampa (e prova) le regole firewall Windows per TUTTE le porte del ruolo."""
+    for port in role_ports(role, config):
+        rule = f"AI4R-{role}-{port}"
+        cmd = (f'netsh advfirewall firewall add rule name="{rule}" '
+               f'dir=in action=allow protocol=TCP localport={port}')
+        print(f"[lan] firewall: porta {port}/TCP in ingresso. Comando da admin:")
+        print(f"      {cmd}")
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, shell=True)
+            if proc.returncode == 0:
+                log(f"regola {rule} applicata.")
+            else:
+                log(f"regola {rule} NON applicata (serve prompt amministratore): eseguila a mano.")
+        except Exception as exc:
+            log(f"regola {rule} NON applicata ({exc}): eseguila a mano da admin.")
 
 
 def wait_for_be(timeout_s: int = 180) -> bool:
@@ -327,35 +357,56 @@ def wait_for_be(timeout_s: int = 180) -> bool:
 
 
 def start_component(role: str, config: dict[str, object]) -> int:
-    """Avvia il componente in foreground con log live (Ctrl+C ferma)."""
+    """Avvia il componente + eventuali servizi extra (log live per il principale,
+    file lan/logs/<nome>.log per gli extra). Ctrl+C ferma tutto."""
     node = config[role]
     assert isinstance(node, dict)
     start = node["start"]
     assert isinstance(start, dict)
-    argv = [str(a) for a in start["argv"]]
-    # .venv/Scripts/python.exe relativo alla root (portabile tra macchine).
-    if argv[0].startswith(".venv"):
-        argv[0] = str(ROOT / argv[0].replace("/", os.sep))
-    cwd = ROOT / str(start.get("cwd", "."))
-    env = os.environ.copy()
-    for key, val in dict(start.get("env", {})).items():
-        env.setdefault(key, str(val).replace("192.168.1.10",
-                      read_env().get("BACKEND_BASE_URL", "http://192.168.1.10:8000").split("://")[1].split(":")[0]))
-    log(f"avvio {role}: {' '.join(argv)}  (cwd={cwd}, Ctrl+C per fermare)")
+    argv = _service_argv(start)
+    cwd = _service_cwd(start)
+    env = _service_env(start)
+
+    log_dir = LAN_DIR / "logs"
+    extras: list[tuple[str, subprocess.Popen[bytes]]] = []
+    for svc in node.get("extra_services", []):
+        assert isinstance(svc, dict)
+        name = str(svc.get("nome", "extra"))
+        try:
+            log_dir.mkdir(exist_ok=True)
+            log_file = open(log_dir / f"{role}-{name}.log", "ab")
+            proc = subprocess.Popen(
+                _service_argv(svc), cwd=str(_service_cwd(svc)), env=_service_env(svc),
+                stdout=log_file, stderr=subprocess.STDOUT,
+            )
+            extras.append((name, proc))
+            log(f"servizio extra '{name}' avviato (pid={proc.pid}, log=lan/logs/{role}-{name}.log)")
+        except FileNotFoundError:
+            log(f"ERRORE: servizio extra '{name}' non avviato (venv o comando mancante).")
+        except OSError as exc:
+            log(f"ERRORE avvio servizio extra '{name}': {exc}")
+
+    log(f"avvio {role}: {' '.join(argv)}  (cwd={cwd}, Ctrl+C per fermare tutto)")
     try:
         proc = subprocess.Popen(argv, cwd=str(cwd), env=env)
         return proc.wait()
     except KeyboardInterrupt:
-        log("arresto richiesto, fermo il componente...")
-        try:
-            proc.terminate()
-            proc.wait(timeout=15)
-        except Exception:
-            proc.kill()
-        return 0
+        log("arresto richiesto, fermo tutto...")
     except FileNotFoundError:
         log(f"ERRORE: {argv[0]} non trovato: il venv non e' pronto, rilancia senza --start.")
         return 1
+    finally:
+        for name, extra in extras:
+            try:
+                extra.terminate()
+                extra.wait(timeout=15)
+                log(f"servizio extra '{name}' fermato.")
+            except Exception:
+                try:
+                    extra.kill()
+                except Exception:
+                    pass
+    return 0
 
 
 def check_one(name: str, base: str, path: str, timeout: int = 5) -> tuple[str, str]:
@@ -400,11 +451,20 @@ def cmd_status(
         status, detail = check_one(role, base, str(node.get("health", "/health")))
         all_ok = all_ok and status == "OK"
         rows.append((role, base, status, detail))
+        for svc in node.get("extra_services", []):
+            assert isinstance(svc, dict)
+            if not svc.get("port"):
+                continue
+            label = f"{role}:{svc.get('nome', 'extra')}"
+            svc_base = f"http://{host}:{int(svc['port'])}"
+            st, de = check_one(label, svc_base, str(svc.get("health", "/health")))
+            all_ok = all_ok and st == "OK"
+            rows.append((label, svc_base, st, de))
     if not silent:
         print("\n[lan] stato LAN:")
-        print(f"{'ruolo':<7} {'indirizzo':<28} {'stato':<5} dettaglio")
+        print(f"{'servizio':<14} {'indirizzo':<28} {'stato':<5} dettaglio")
         for role, base, status, detail in rows:
-            print(f"{role:<7} {base:<28} {status:<5} {detail}")
+            print(f"{role:<14} {base:<28} {status:<5} {detail}")
     print("[lan] TUTTO OK" if all_ok else "[lan] qualcosa non risponde: vedi dettaglio sopra")
     return 0 if all_ok else 1
 

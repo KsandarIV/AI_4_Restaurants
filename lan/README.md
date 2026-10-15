@@ -41,13 +41,13 @@ avviarsi: il BE parte per primo e deve restare su. `--no-wait` salta l'attesa.
 
 | ruolo | porta | health | avvio |
 |---|---|---|---|
-| be | 8000 | `/api/health` | `python -m backend.main` |
-| chat | 8501 | `/_stcore/health` | `streamlit run chat/app.py` (+`BE_URL` all'IP BE) |
+| be | 8000 + 8080 | API + sito `frontend/` (servito dal BE, chiama chat/voice in LAN) |
+| chat | 8501 + 8002 | Streamlit + `chat/api.py` (log extra in `lan/logs/`, `BE_URL` all'IP BE) |
 | voice | 8003 | `/health` | `python -m voicebot` (+WS `/ws/voice`) |
 
 ## Prerequisiti rete (una tantum)
 
 - Stessa LAN/Wi-Fi; IP possibilmente statici o DHCP riservati.
 - BE in ascolto su `0.0.0.0` (già così in `backend/main.py` e `voicebot`).
-- Firewall: porte **8000/8501/8003 TCP in ingresso** (lo script stampa i comandi `netsh`).
+- Firewall: porte **8000/8501/8002/8080/8003 TCP in ingresso** (lo script stampa i comandi `netsh`).
 - Sul BE: `ollama serve` + `ollama list` con `gemma4:12b`.
