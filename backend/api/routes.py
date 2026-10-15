@@ -1,13 +1,16 @@
 import json
+import logging
 import datetime
 import asyncio
+import httpx
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.config import settings
-from backend.database.connection import get_db
+from backend.database.connection import get_db, SessionLocal
 from backend.database import crud
 from backend.graph.workflow import process_message
 from backend.api.schemas import (
@@ -23,6 +26,27 @@ from backend.api.schemas import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _llm_unavailable(exc: BaseException) -> bool:
+    """True if the failure is the language model not answering (Ollama off, network, timeout)."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, ConnectionError, TimeoutError)):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+def _raise_chat_error(exc: Exception):
+    """Turn a failure of the conversation into a clean HTTP error: no internal details to the client."""
+    if _llm_unavailable(exc):
+        logger.warning("Modello linguistico non raggiungibile: %s", exc)
+        raise HTTPException(status_code=503, detail="Il modello linguistico non risponde in questo momento. Riprova tra poco.")
+    logger.exception("Errore durante la conversazione")
+    raise HTTPException(status_code=500, detail="Errore interno durante l'elaborazione della conversazione.")
 
 # -------------------------------------------------------------
 # Customer registration (called by CHAT and VOICE BEFORE the conversation)
@@ -60,10 +84,7 @@ def chat_endpoint(request: ChatRequest):
             timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat()
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Errore interno durante l'elaborazione conversazionale: {str(e)}"
-        )
+        _raise_chat_error(e)
 
 @router.post("/chat/stream", summary="SSE Streaming endpoint per VoiceBot e ChatBot")
 async def chat_stream_endpoint(request: Request):
@@ -93,12 +114,15 @@ async def chat_stream_endpoint(request: Request):
         message_text = "Buongiorno"
 
     # Process message with LangGraph
-    result = process_message(
-        message=message_text,
-        session_id=session_id,
-        customer_id=customer_id,
-        client_type=client_type
-    )
+    try:
+        result = process_message(
+            message=message_text,
+            session_id=session_id,
+            customer_id=customer_id,
+            client_type=client_type
+        )
+    except Exception as e:
+        _raise_chat_error(e)
     reply_text = result["reply"]
 
     async def event_generator():
@@ -201,28 +225,55 @@ def get_menu_endpoint(
     is_vegetarian: Optional[bool] = Query(None, description="Filtra solo piatti vegetariani"),
     is_vegan: Optional[bool] = Query(None, description="Filtra solo piatti vegani"),
     is_gluten_free: Optional[bool] = Query(None, description="Filtra solo piatti senza glutine"),
+    dish_type: Optional[str] = Query(None, description="Tipo di piatto: carne, pesce, vegetale, dolce, bevanda"),
     db: Session = Depends(get_db)
 ):
-    items = crud.get_menu_items(
-        db=db,
-        category=category,
-        allergen_free=allergen_free,
-        is_vegetarian=is_vegetarian,
-        is_vegan=is_vegan,
-        is_gluten_free=is_gluten_free
-    )
-    return items
+    try:
+        return crud.get_menu_items(
+            db=db,
+            category=category,
+            allergen_free=allergen_free,
+            is_vegetarian=is_vegetarian,
+            is_vegan=is_vegan,
+            is_gluten_free=is_gluten_free,
+            dish_type=dish_type
+        )
+    except crud.UnknownAllergen as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/info", summary="Informazioni generali sul ristorante")
 def get_info_endpoint(key: Optional[str] = Query(None, description="Chiave specifica (es. address, opening_hours, phone, parking)"), db: Session = Depends(get_db)):
     return crud.get_restaurant_info(db, key=key)
 
-@router.get("/health", response_model=HealthResponse, summary="Healthcheck e stato del server")
+def _check_llm():
+    """(server reachable, configured model installed) - quick check, never raises."""
+    if settings.LLM_PROVIDER == "mock":
+        return True, True
+    try:
+        tags = httpx.get(f"{settings.OLLAMA_BASE_URL}/api/tags", timeout=1.5).json()
+        names = {m.get("name", "") for m in tags.get("models", [])}
+        wanted = settings.OLLAMA_MODEL
+        installed = wanted in names or any(n.split(":")[0] == wanted for n in names)
+        return True, installed
+    except Exception:
+        return False, False
+
+
+@router.get("/health", response_model=HealthResponse, summary="Healthcheck: database e modello rispondono davvero")
 def health_endpoint():
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+    llm_reachable, model_installed = _check_llm()
     return HealthResponse(
-        status="online",
+        status="online" if (db_ok and llm_reachable and model_installed) else "degraded",
         restaurant=settings.RESTAURANT_NAME,
         llm_provider=settings.LLM_PROVIDER,
         llm_model=settings.OLLAMA_MODEL,
-        database="SQLite (connected)"
+        database="SQLite (connected)" if db_ok else "SQLite (ERRORE)",
+        llm_reachable=llm_reachable,
+        llm_model_available=model_installed
     )

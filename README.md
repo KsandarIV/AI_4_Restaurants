@@ -175,13 +175,61 @@ python client_demo.py http://<IP_MACCHINA_BE>:8000
 
 ---
 
+## 🛠️ Sicurezza, area del ristoratore e manutenzione
+
+**Conferma prima di agire.** Il modello linguistico può solo *proporre* una prenotazione, modifica o cancellazione: il BE risponde con un riepilogo scritto dal codice ("Tavolo per 4 persone venerdì 16 ottobre alle 20:30. Confermi?") ed esegue solo dopo un "sì" esplicito. "Sì ma alle 21" non è una conferma. Una richiesta impossibile (giorno chiuso, orario fuori servizio, nessun tavolo, troppi ospiti) non viene nemmeno proposta, e una prenotazione si propone solo se negli ultimi messaggi c'è una richiesta di prenotare.
+
+**Allergie e intolleranze.** Le domande su allergie, intolleranze o "senza glutine/lattosio…" **non passano dal modello**: la risposta è costruita dal codice con i piatti del database (`backend/graph/allergies.py`). Per un allergene non presente nel menu (es. arachidi) il BE dice di non avere informazioni e rimanda al personale. Il filtro `allergen_free` riconosce sinonimi (latticini, latte → lattosio) e rifiuta le parole sconosciute invece di restituire tutto il menu.
+
+**Area staff per il ristoratore.** Imposta `STAFF_API_KEY` nel `.env` e apri `http://<IP_BE>:8000/api/staff`: pagina con le prenotazioni (data, ora, persone, tavolo, **nome e telefono** del cliente, note), filtrabili per data e stato. Senza chiave l'area è disabilitata. Endpoint (header `X-API-Key`):
+
+| Metodo | Endpoint | Cosa fa |
+|---|---|---|
+| `GET` | `/api/staff/reservations?date=&status=` | Prenotazioni con nome e telefono del cliente |
+| `GET` / `POST` | `/api/staff/closures` | Elenco / nuova chiusura straordinaria `{date, reason}` (le prenotazioni già fatte **non** vengono cancellate: la risposta le elenca) |
+| `DELETE` | `/api/staff/closures/{data}` | Riapre il ristorante in quella data |
+| `PATCH` | `/api/staff/menu/{id}` | `{available: false}` = piatto esaurito (sparisce dal menu); oppure cambia il prezzo |
+
+Nome e telefono compaiono **solo** qui: mai nelle risposte destinate ai clienti né al modello.
+
+**Menu.** Ogni piatto ha un tipo (`carne`, `pesce`, `vegetale`, `dolce`, `bevanda`): `GET /api/menu?dish_type=carne` e il tool `get_menu(dish_type=...)`. Le categorie accettano sinonimi (`dolci` → Dessert).
+
+**Dati sempre allineati.** All'avvio il BE aggiunge le colonne mancanti ai database vecchi e riallinea menu e informazioni con `backend/database/seed_data.py` (aggiorna i piatti esistenti, aggiunge i nuovi, non cancella nulla e rispetta i piatti segnati come esauriti). Gli orari mostrati al cliente sono generati dalla configurazione: non possono più contraddire le regole di prenotazione.
+
+**Errori e salute del servizio.** Con Ollama spento o troppo lento `/api/chat` risponde **503** con un messaggio chiaro; ogni altro errore è un 500 senza dettagli interni (il dettaglio resta nel log). `/api/health` controlla davvero database, server del modello e presenza del modello configurato: `status` è `online` o `degraded`.
+
+**Dati personali nel tempo.** `python -m backend.maintenance purge --dry-run` mostra quanti clienti verrebbero cancellati; senza `--dry-run` cancella nome e telefono di chi è registrato da più di `DATA_RETENTION_DAYS` giorni (predefinito 90) e non ha prenotazioni recenti. Le prenotazioni restano, anonime.
+
+**Vedere il database.** File `backend/restaurant.db` (SQLite): aprirlo in sola lettura con *DB Browser for SQLite*, oppure usare la pagina staff.
+
+**Impostazioni** (variabili d'ambiente o `.env`, vedi `.env.example`):
+
+| Variabile | Predefinito | Significato |
+|---|---|---|
+| `STAFF_API_KEY` | vuota | Chiave dell'area staff (vuota = disabilitata) |
+| `REQUIRE_CUSTOMER_REGISTRATION` | `true` | Prenotare richiede un cliente registrato; solo il proprietario vede/modifica/cancella |
+| `OLLAMA_MODEL`, `OLLAMA_REASONING` | `llama3.2`, vuota | Modello; `false` spegne il "thinking" dei modelli che ragionano (gemma4: risposte molto più veloci) |
+| `OLLAMA_TIMEOUT_S` | `120` | Dopo quanti secondi il modello è considerato non raggiungibile |
+| `CLOSED_WEEKDAYS` | `0` | Giorni di chiusura settimanale (0 = lunedì … 6 = domenica) |
+| `CORS_ORIGINS` | `*` | Origini web ammesse, separate da virgola |
+| `DEBUG` | `false` | `true` = riavvio automatico a ogni modifica dei file: solo per sviluppare |
+| `DATA_RETENTION_DAYS` | `90` | Conservazione di nome e telefono |
+| `CHECKPOINTS_DB_PATH` | `backend/conversations.db` | Dove si salvano le conversazioni |
+
+**Limiti noti.** Il lucchetto contro le doppie prenotazioni vale per un solo processo del server (non avviare più worker). Un modello piccolo come `llama3.2` può sbagliare nelle risposte libere (per esempio attribuire allergeni sbagliati a un piatto nel menu generico): le allergie sono protette dal codice, il resto no. Nessuna autenticazione sugli altri endpoint, adatto a una rete LAN.
+
+---
+
+---
+
 ## 🧪 Esecuzione della Suite di Test
 
-Tutti i test unitari e di integrazione (DB, Tools, LangGraph, API REST, rotazione slot, validazioni) possono essere eseguiti con:
+Tutti i test (DB, Tools, LangGraph, API REST, staff, allergie, conferme, validazioni) si eseguono dalla radice del progetto:
 ```bash
-.\venv\Scripts\pytest.exe -v
+python -m pytest tests -q
 ```
-Risultato: **22 passed** (100% test superati).
+Scrivere `tests` è importante: senza, pytest raccoglie anche `voice/` e va in errore se il pacchetto `voicebot` non è installato.
+I test usano un database **temporaneo** (cartella creata e cancellata da `tests/conftest.py`) e il modello finto: non toccano `backend/restaurant.db` e non richiedono Ollama.
 
 ---
 

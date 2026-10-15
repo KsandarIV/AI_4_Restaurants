@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.config import settings
 from backend.database.crud import init_db
 from backend.api.routes import router as api_router
+from backend.api.staff import router as staff_router
 
 # Configure logging
 logging.basicConfig(
@@ -37,17 +38,20 @@ app = FastAPI(
 )
 
 # Enable CORS for LAN access across different devices
+# No cookies are used, so credentials stay off ("*" with credentials is not valid CORS anyway).
+# Restrict the origins with CORS_ORIGINS=http://host1,http://host2 when the web page is on a known address.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Include API router at /api and root aliases for VoiceBot compatibility
 app.include_router(api_router, prefix="/api")
-app.include_router(api_router, prefix="")
+app.include_router(api_router, prefix="", include_in_schema=False)  # same routes without /api, hidden from Swagger
+app.include_router(staff_router, prefix="/api")  # restaurant owner area, protected by STAFF_API_KEY
 
 @app.get("/health", summary="Root healthcheck alias")
 def root_health():

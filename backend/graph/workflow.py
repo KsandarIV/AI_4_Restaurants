@@ -11,6 +11,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from backend.config import settings
 from backend.database import crud
 from backend.database.connection import SessionLocal
+from backend.graph.allergies import answer_allergy_question
 from backend.graph.state import AgentState
 from backend.graph.tools import ALL_TOOLS
 from backend.graph.prompts import get_system_prompt
@@ -254,6 +255,17 @@ def process_message(
             return {"reply": reply, **result_info}
         # "no", a change ("sì ma alle 21") or any other message: the proposal is dropped and the LLM takes over
         graph_app.update_state(config, {"pending_action": None}, as_node="agent")
+
+    # Allergies and intolerances: answered by code from the menu, never by the LLM (it invents dishes)
+    allergy_reply = answer_allergy_question(message, client_type)
+    if allergy_reply:
+        graph_app.update_state(
+            config,
+            {"messages": [HumanMessage(content=message), AIMessage(content=allergy_reply)],
+             "session_id": session_id, "customer_id": cid, "client_type": client_type},
+            as_node="agent",
+        )
+        return {"reply": allergy_reply, **result_info}
 
     input_state = {
         "messages": [HumanMessage(content=message)],

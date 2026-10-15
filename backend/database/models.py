@@ -68,9 +68,19 @@ class MenuItem(Base):
     is_vegetarian = Column(Boolean, default=False)
     is_vegan = Column(Boolean, default=False)
     is_gluten_free = Column(Boolean, default=False)
+    dish_type = Column(String(20), nullable=True)  # carne, pesce, vegetale, dolce, bevanda
+    available = Column(Boolean, nullable=False, default=True, server_default="1")  # False = sold out today
 
     def __repr__(self):
         return f"<MenuItem {self.name} - €{self.price:.2f}>"
+
+class Closure(Base):
+    """A day on which the restaurant is closed besides the weekly closing day (holidays, vacations, private events)."""
+    __tablename__ = "closures"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(String(10), unique=True, index=True, nullable=False)  # YYYY-MM-DD
+    reason = Column(String(200), nullable=True)
 
 class RestaurantInfo(Base):
     __tablename__ = "restaurant_info"

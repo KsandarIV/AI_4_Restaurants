@@ -231,5 +231,6 @@ def get_llm(provider: Optional[str] = None) -> BaseChatModel:
         model=settings.OLLAMA_MODEL,
         base_url=settings.OLLAMA_BASE_URL,
         temperature=settings.LLM_TEMPERATURE,
+        client_kwargs={"timeout": settings.OLLAMA_TIMEOUT_S},
         **options
     )
