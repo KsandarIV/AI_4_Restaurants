@@ -1,15 +1,20 @@
-"""Stub BE locale per i test Voice offline (solo stdlib, nessuna dipendenza).
+"""Local stub of the BE for offline voice tests and local demos (stdlib only).
 
-Imita il contratto del BE vero (backend/api/routes.py) COMPRESE le parti che
-il finto BE di chat/ NON copre: stream SSE, availability e CRUD prenotazioni.
-Uso nei test: `make_stub()` ritorna (server, base_url); chiudere con
-`server.shutdown()`. Uso manuale: `python stub_be.py` (porta 8000).
+Mimics the real BE contract (backend/api/routes.py): health, customer registration
+(E.164 validation, 422 on bad data), chat + SSE stream with the registration rule and the
+yes/no booking confirmation, availability, reservations CRUD, menu, info.
+Tests:   `make_stub()` returns (server, base_url, state); stop with `server.shutdown()`.
+Manual:  `python tests/stub_be.py [port]`  (default 8000).
+
+KEEP IN SYNC with backend/api/routes.py (docs/AGENTS.md section 2.6).
 """
 
 from __future__ import annotations
 
 import json
+import re
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse, parse_qs
@@ -22,19 +27,46 @@ MENU = [
 INFO = {"address": "Via Roma 1", "phone": "081 000000", "opening_hours": "12-15 / 19-23:30"}
 
 
+_PHONE = re.compile(r"^\+[1-9]\d{7,14}$")
+_BOOK = re.compile(r"prenot|tavolo|book|reserv", re.I)
+_YES = re.compile(r"^\W*(?:s[ìi]|yes|ok|certo|confermo)\b", re.I)
+
+
 class StubState:
-    """Stato condiviso: prenotazioni + ultimo payload ricevuto (per test PII)."""
+    """Shared state: customers, reservations and every request received (for assertions)."""
 
     def __init__(self) -> None:
         self.reservations: dict[str, dict[str, Any]] = {}
+        self.customers: dict[str, dict[str, str]] = {}
+        self.pending: dict[str, str] = {}  # session_id -> booking waiting for "yes"
         self.counter = 0
         self.last_chat_payload: dict[str, Any] = {}
+        self.chat_payloads: list[dict[str, Any]] = []
+        self.fail_chat_status = 0  # >0: /api/chat and /api/chat/stream answer this status
+        self.chat_delay_s = 0.0  # simulated LLM latency before answering
 
 
-def _reply_for(message: str) -> str:
-    if "prenot" in message.lower():
-        return "Prenotazione confermata! Codice: RES-STUB01."
-    return f"[Stub BE] Ho ricevuto: «{message}»."
+def _converse(state: StubState, body: dict[str, Any], message: str) -> str:
+    """The stub "LLM": registration rule + confirmation protocol like the real agent."""
+    session = str(body.get("session_id", "stub_sess"))
+    customer = str(body.get("customer_id") or "anon_stub")
+    low = message.lower()
+    if session in state.pending and _YES.match(message):
+        state.counter += 1
+        code = f"RES-STUB{state.counter:02d}"
+        state.reservations[code] = {"success": True, "booking_code": code,
+                                    "customer_id": customer, "details": state.pending.pop(session)}
+        return f"Prenotazione confermata. Il codice è {code}."
+    if _BOOK.search(message):
+        if customer.startswith("anon_"):
+            return "Per prenotare serve prima la registrazione di nome e telefono."
+        state.pending[session] = message
+        return "Tavolo per due persone domani alle venti. Confermi?"
+    if "menu" in low:
+        return "Abbiamo bruschetta, pizza margherita e tiramisù."
+    if "orari" in low or "aprite" in low:
+        return "Siamo aperti a pranzo dalle dodici e a cena dalle diciannove."
+    return f"[Stub BE] Ho ricevuto: {message}"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -68,7 +100,9 @@ class Handler(BaseHTTPRequestHandler):
         path, qs = self._path()
         st = self.state
         if path in ("/health", "/api/health"):
-            self._json(200, {"status": "online", "restaurant": "Stub", "llm_provider": "stub"})
+            self._json(200, {"status": "online", "restaurant": "Stub", "llm_provider": "stub",
+                             "llm_model": "stub-model", "llm_reachable": True,
+                             "llm_model_available": True, "database": "SQLite (connected)"})
         elif path in ("/api/menu", "/menu"):
             self._json(200, MENU)
         elif path in ("/api/info", "/info"):
@@ -92,22 +126,44 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path, _ = self._path()
         st = self.state
-        if path in ("/api/chat", "/chat"):
+        if path in ("/api/customers", "/customers"):
+            body = self._body()
+            name = str(body.get("name", "")).strip()
+            phone = str(body.get("phone", ""))
+            if not name or not _PHONE.match(phone) or body.get("consent") is not True:
+                self._json(422, {"detail": "invalid customer data"})
+                return
+            customer_id = f"cust_{len(st.customers) + 1:012x}"
+            st.customers[customer_id] = {"name": name, "phone": phone}
+            self._json(200, {"customer_id": customer_id})
+        elif path in ("/api/chat", "/chat"):
             body = self._body()
             st.last_chat_payload = body
+            st.chat_payloads.append(body)
+            if st.chat_delay_s:
+                time.sleep(st.chat_delay_s)
+            if st.fail_chat_status:
+                self._json(st.fail_chat_status, {"detail": "stub failure"})
+                return
             msg = str(body.get("message", ""))
             sess = str(body.get("session_id", "stub_sess"))
-            self._json(200, {"reply": _reply_for(msg), "session_id": sess,
+            self._json(200, {"reply": _converse(st, body, msg), "session_id": sess,
                              "customer_id": body.get("customer_id") or f"anon_{sess}",
                              "client_type": body.get("client_type", "chat"),
                              "timestamp": "2026-01-01T00:00:00Z"})
         elif path in ("/api/chat/stream", "/chat/stream"):
             body = self._body()
             st.last_chat_payload = body
+            st.chat_payloads.append(body)
+            if st.chat_delay_s:
+                time.sleep(st.chat_delay_s)
+            if st.fail_chat_status:
+                self._json(st.fail_chat_status, {"detail": "stub failure"})
+                return
             msgs = body.get("messages") or []
             text = next((str(m.get("content", "")) for m in reversed(msgs)
                          if m.get("role") == "user"), str(body.get("message", "Buongiorno")))
-            reply = _reply_for(text)
+            reply = _converse(st, body, text)
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
             self.end_headers()

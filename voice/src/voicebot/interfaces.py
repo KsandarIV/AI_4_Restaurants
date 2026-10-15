@@ -1,36 +1,46 @@
-"""Abstract interfaces: VAD / STT / LLM orchestrator / TTS."""
+"""Abstract interfaces: VAD / STT / LLM orchestrator / TTS.
+
+The pipeline (``pipeline/session.py``) only knows these contracts, so every stage
+can be swapped (real model, fake for tests, remote service) without touching it.
+"""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator, Literal
+from typing import Literal
 
 
 @dataclass(frozen=True, slots=True)
 class VadEvent:
+    """Boundary detected by a VAD."""
+
     kind: Literal["speech_start", "speech_end", "segment"]
-    pcm: bytes = b""  # full utterance on speech_end/segment
+    pcm: bytes = b""  # full utterance on speech_end / segment
     sample_rate: int = 16000
 
 
 @dataclass(frozen=True, slots=True)
 class ChatMessage:
+    """One entry of the dialogue history."""
+
     role: Literal["system", "user", "assistant"]
     content: str
-
-
-@dataclass(frozen=True, slots=True)
-class LlmCallbacks:
-    on_token: str = ""  # reserved for future sync hooks
 
 
 class AbstractVAD(ABC):
     """Voice activity detector over PCM16 frames."""
 
+    @property
+    @abstractmethod
+    def speech_ms(self) -> float:
+        """Milliseconds of the speech burst in progress (0 when idle)."""
+        raise NotImplementedError
+
     @abstractmethod
     def process_frame(self, pcm: bytes, sample_rate: int) -> VadEvent | None:
-        """Feed one frame; return an event when speech starts/ends."""
+        """Feed one frame; return an event when speech starts or ends."""
         raise NotImplementedError
 
     @abstractmethod
@@ -40,17 +50,21 @@ class AbstractVAD(ABC):
 
     @abstractmethod
     def reset(self) -> None:
-        """Drop internal buffers (used on barge-in)."""
+        """Drop internal buffers."""
         raise NotImplementedError
 
 
 class AbstractSTT(ABC):
-    """Streaming-capable speech-to-text (local model)."""
+    """Speech-to-text running on a local model."""
 
     @abstractmethod
     async def transcribe(self, pcm: bytes, sample_rate: int) -> str:
         """Transcribe one complete utterance (PCM16 mono)."""
         raise NotImplementedError
+
+    async def warmup(self) -> None:
+        """Load the model eagerly so the first call is not slow (optional)."""
+        return None
 
     async def aclose(self) -> None:
         """Release model resources."""
@@ -58,34 +72,49 @@ class AbstractSTT(ABC):
 
 
 class AbstractLLMOrchestrator(ABC):
-    """Dialogue manager: PII-scrub -> BE (local LLM) -> function calls -> token stream."""
+    """Dialogue manager: anonymise -> BE (local LLM) -> restore -> token stream.
+
+    It must behave exactly like the chat bot, only the transport (voice) differs.
+    """
 
     history: list[ChatMessage]
 
+    async def opening(self) -> str:
+        """Text the bot says as soon as the call starts (empty = stay silent)."""
+        return ""
+
     @abstractmethod
-    async def stream_reply(self, user_text: str) -> AsyncIterator[str]:
+    def stream_reply(self, user_text: str) -> AsyncIterator[str]:
         """Yield text tokens for one assistant turn. Must be cancellable."""
         raise NotImplementedError
-        yield ""  # pragma: no cover - keeps method an async generator for subclasses
+
+    async def reply(self, user_text: str) -> str:
+        """One complete reply (used by the on-demand v2 mode)."""
+        return "".join([token async for token in self.stream_reply(user_text)])
 
     @abstractmethod
     def reset(self) -> None:
-        """Clear dialogue history."""
+        """Start a brand-new conversation."""
         raise NotImplementedError
+
+    async def aclose(self) -> None:
+        """Release network resources (optional)."""
+        return None
 
 
 class AbstractTTS(ABC):
-    """Text-to-speech with streaming audio output (local model)."""
+    """Text-to-speech running on a local model, with streaming audio output."""
 
     sample_rate: int = 22050
 
     @abstractmethod
-    async def synthesize_stream(
-        self, text_stream: AsyncIterator[str]
-    ) -> AsyncIterator[bytes]:
+    def synthesize_stream(self, text_stream: AsyncIterator[str]) -> AsyncIterator[bytes]:
         """Yield PCM16LE audio chunks while text tokens arrive. Must be cancellable."""
         raise NotImplementedError
-        yield b""  # pragma: no cover
+
+    async def warmup(self) -> None:
+        """Load the voice eagerly so the first sentence is not slow (optional)."""
+        return None
 
     async def aclose(self) -> None:
         """Release model resources."""

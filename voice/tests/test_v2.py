@@ -1,48 +1,130 @@
-"""V2 on-demand: STT -> BE /api/chat -> TTS, senza mic né rete (stub BE + fake)."""
+"""v2 on-demand mode: STT -> chat conversation -> TTS, plus the optional CHAT-service transport."""
 
 from __future__ import annotations
 
-import struct
+import argparse
+import json
 
+import httpx
 import pytest
 
-from tests.stub_be import make_stub
-from voicebot.backend import BackendClient
+from tests.helpers import loud, make_orchestrator, silence, stub_be
+from voicebot.chat_service import ChatServiceOrchestrator
+from voicebot.config import Settings
+from voicebot.orchestrator import BackendOrchestrator
 from voicebot.stt import FakeSTT
 from voicebot.tts import FakeTTS
-from voicebot.v2 import answer_once
+from voicebot.v2 import amain, answer_once, build_conversation, hear_and_reply
 
 
-def _loud(n: int = 3200) -> bytes:
-    return struct.pack("<%dh" % n, *([3000] * n))
+async def test_v2_runs_the_whole_chat_conversation_by_voice() -> None:
+    async with stub_be() as (url, state):
+        conversation = make_orchestrator(url)
+        stt, tts = FakeSTT(script=["Mario Rossi, 333 1234567", "sì", "Vorrei prenotare", "sì"]), FakeTTS()
+        replies = []
+        for _ in range(4):
+            heard, reply, audio = await answer_once(loud(3200), 16000, stt, conversation, tts)
+            assert heard and reply and len(audio) > 0
+            replies.append(reply)
+        assert "È corretto" in replies[0] and "Registrazione completata" in replies[1]
+        assert "Confermi" in replies[2] and "RES-STUB01" in replies[3]
+        assert state.customers and not any("333" in str(p.get("message")) for p in state.chat_payloads)
+        assert all(p["client_type"] == "voice" for p in state.chat_payloads)
+        await conversation.aclose()
 
 
-@pytest.fixture()
-async def wired() -> tuple[BackendClient, FakeSTT, FakeTTS, str, str]:
-    server, base_url, _ = make_stub()
-    backend = BackendClient(base_url=str(base_url), timeout_s=10.0)
-    try:
-        yield backend, FakeSTT(), FakeTTS(), "sess_test", "anon_test"
-    finally:
-        await backend.aclose()
-        server.shutdown()
+async def test_v2_uses_the_synchronous_endpoint_not_the_stream() -> None:
+    """The point of v2: one complete reply from POST /api/chat, nothing streamed."""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path == "/api/customers":
+            return httpx.Response(200, json={"customer_id": "cust_1"})
+        return httpx.Response(200, json={"reply": "Certo."})
+
+    from voicebot.backend import BackendClient
+
+    backend = BackendClient("http://be.test", transport=httpx.MockTransport(handler))
+    conversation = BackendOrchestrator(backend, require_registration=False, use_ner=False)
+    assert await conversation.reply("ciao") == "Certo."
+    assert calls == ["/api/chat"]
+    await conversation.aclose()
 
 
-async def test_v2_turn_end_to_end(wired: object) -> None:
-    backend, stt, tts, sess, cust = wired  # type: ignore[misc]
-    user_text, reply, audio = await answer_once(_loud(), 16000, stt, backend, tts, sess, cust)
-    assert user_text == stt.fixed_text  # type: ignore[union-attr]
-    assert "RES-STUB01" in reply  # il testo fake contiene "prenot" -> conferma stub
-    assert len(audio) > 0
+async def test_silence_asks_to_repeat_without_calling_the_be() -> None:
+    async with stub_be() as (url, state):
+        conversation = make_orchestrator(url, require_registration=False)
+        heard, reply = await hear_and_reply(silence(3200), 16000, FakeSTT(), conversation)
+        assert heard == "" and "ripetere" in reply and state.chat_payloads == []
+        _, reply_en = await hear_and_reply(silence(3200), 16000, FakeSTT(), conversation, language="en")
+        assert "repeat" in reply_en
+        await conversation.aclose()
 
 
-async def test_v2_silence_gives_retry_message(wired: object) -> None:
-    backend, stt, tts, sess, cust = wired  # type: ignore[misc]
-    user_text, reply, audio = await answer_once(b"\x00\x00" * 3200, 16000, stt, backend, tts, sess, cust)
-    assert user_text == "" and "ripetere" in reply and audio == b""
+# ---------------- the chat service transport ----------------
 
 
-async def test_backend_chat_sync_shape(wired: object) -> None:
-    backend = wired[0]  # type: ignore[index]
-    resp = await backend.chat("vorrei prenotare", "s1", "c1")  # type: ignore[union-attr]
-    assert "RES-STUB01" in resp["reply"] and resp["session_id"] == "s1"
+def _chat_service() -> tuple[httpx.MockTransport, list[tuple[str, dict[str, object]]]]:
+    seen: list[tuple[str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content or b"{}")
+        seen.append((request.url.path, body))
+        if request.url.path == "/chat/session":
+            return httpx.Response(200, json={"session_id": "chat_1", "phase": "registration",
+                                             "reply": "Benvenuto! Mi servono nome e telefono."})
+        if body.get("session_id") != "chat_1":
+            return httpx.Response(404, json={"detail": "expired"})
+        return httpx.Response(200, json={"reply": f"eco: {body['text']}", "phase": "chat"})
+
+    return httpx.MockTransport(handler), seen
+
+
+async def test_chat_service_transport_is_a_pure_speech_wrapper() -> None:
+    transport, seen = _chat_service()
+    conversation = ChatServiceOrchestrator("http://chat.test:8002", transport=transport)
+    assert "nome e telefono" in await conversation.opening()
+    assert await conversation.reply("Mario Rossi") == "eco: Mario Rossi"
+    assert "".join([t async for t in conversation.stream_reply("ciao")]) == "eco: ciao"
+    assert [path for path, _ in seen] == ["/chat/session", "/chat/message", "/chat/message"]
+    assert conversation.phase == "chat"
+    await conversation.aclose()
+
+
+async def test_chat_service_recovers_when_its_session_expired() -> None:
+    transport, _ = _chat_service()
+    conversation = ChatServiceOrchestrator("http://chat.test:8002", transport=transport)
+    await conversation.opening()
+    conversation.session_id = "chat_stale"
+    assert "problema" in await conversation.reply("ciao")  # spoken apology, no crash
+    assert await conversation.reply("ciao") == "eco: ciao"  # opened a fresh session by itself
+    await conversation.aclose()
+
+
+async def test_chat_service_down_is_reported_in_plain_words() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    conversation = ChatServiceOrchestrator("http://chat.test:8002", transport=httpx.MockTransport(handler))
+    assert "raggiungere il server" in await conversation.opening()
+    await conversation.aclose()
+
+
+def test_build_conversation_picks_the_transport() -> None:
+    assert isinstance(build_conversation(Settings()), BackendOrchestrator)
+    assert isinstance(build_conversation(Settings(chat_service_url="http://chat:8002")), ChatServiceOrchestrator)
+
+
+async def test_text_mode_session_end_to_end(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """`python -m voicebot.v2 --text` against the stub BE, typing instead of speaking."""
+    async with stub_be() as (url, state):
+        monkeypatch.setenv("BACKEND_BASE_URL", url)
+        monkeypatch.setenv("STT_BACKEND", "fake")
+        typed = iter(["Mario Rossi, 333 1234567", "sì", "che menu avete?", "q"])
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(typed))
+        code = await amain(argparse.Namespace(text=True, no_speaker=True, verbose=False))
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "nome e cognome" in out and "Registrazione completata" in out and "bruschetta" in out.lower()
+        assert len(state.customers) == 1

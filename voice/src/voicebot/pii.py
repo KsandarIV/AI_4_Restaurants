@@ -1,23 +1,17 @@
-"""PII scrubbing: CHAT/VOICE must pre-process data before sending to BE."""
+"""Last-line PII safety net for the transport layer.
+
+The real anonymisation happens in ``conversation.py`` with :class:`Anonymizer`
+(same rules as the chat bot, restorable placeholders). ``scrub_pii`` runs the same
+regex layers once more, statelessly and without the NER model, on whatever is about
+to leave for the BE - so a future code path that forgets to anonymise still cannot
+leak an e-mail address or a phone number.
+"""
 
 from __future__ import annotations
 
-import re
-
-_EMAIL = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
-_PHONE = re.compile(r"(?<!\d)(?:\+?39[\s.-]?)?(?:\d[\s.-]?){9,10}(?!\d)")
-_CCF = re.compile(r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b", re.IGNORECASE)
-_CARD = re.compile(r"\b(?:\d[ -]?){13,16}\b")
+from .anonymizer import Anonymizer
 
 
 def scrub_pii(text: str) -> str:
-    """Replace emails, phones, fiscal codes and card-like numbers with tags."""
-    redacted = _EMAIL.sub("[EMAIL]", text)
-    redacted = _CCF.sub("[CODICE_FISCALE]", redacted)
-    redacted = _CARD.sub("[CARTA]", redacted)
-    # Phone last: avoids clobbering dates already handled; keep short numbers (e.g. "2 persone", "ore 20") intact
-    # by requiring at least 9 digits.
-    digits_only = re.sub(r"\D", "", text)
-    if len(digits_only) >= 9:
-        redacted = _PHONE.sub("[TELEFONO]", redacted)
-    return redacted
+    """Replace e-mails, fiscal codes, phone numbers and addresses with ``[TYPE_N]`` tags."""
+    return Anonymizer(use_model=False).anonymize(text)

@@ -1,134 +1,203 @@
-"""LLM orchestrator: dialogue state + BE function-calling + token streaming.
+"""The voice bot's brain: the chat bot's conversation, spoken.
 
-The heavy LLM lives on the BE (local model via Ollama, LangGraph agent).
-This orchestrator:
-  1. keeps short dialogue history + a stable BE session/customer pair (memory),
-  2. detects reservation intents locally (regex, no network),
-  3. calls BE tools (availability/reserve/modify/cancel/menu/info) directly for
-     low latency, and
-  4. otherwise streams the reply word-by-word from the BE chat endpoint so
-     the TTS can start speaking before the turn is complete.
+It reproduces ``chat/api.py`` step by step, so a customer gets the same behaviour on
+the phone as in the chat window:
 
-NOTE on latency: the BE runs the full LangGraph inference BEFORE streaming
-(routes.py streams word-by-word with 30 ms pacing), so the first token costs
-a full turn. The pipeline still overlaps TTS synthesis with the word stream.
+  1. REGISTRATION phase - ask name + phone in one utterance, read them back, confirm,
+     then ``POST /api/customers`` -> anonymous ``customer_id``. The LLM never takes part
+     and never sees these data.
+  2. CHAT phase - every utterance goes  anonymise -> BE (``/api/chat`` or the SSE stream)
+     -> restore placeholders -> text for the TTS.
+
+There are NO local intent shortcuts (no regex "menu"/"booking" detection, no hard-coded
+dates): the BE's LangGraph agent decides everything, including the yes/no confirmation of
+bookings, allergy answers and registration checks. The voice bot only adds ears and a mouth.
 """
 
 from __future__ import annotations
 
 import asyncio
-import re
 import uuid
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
+from enum import Enum
 
-from .backend import BackendClient
+from .anonymizer import Anonymizer
+from .backend import BackendClient, BackendError
+from .contacts import RegistrationDialog
 from .interfaces import AbstractLLMOrchestrator, ChatMessage
 from .logging_json import get_logger
+from .messages import normalize_language, say
+from .prompts import build_system_prompt
 
 log = get_logger("orchestrator")
 
-_RESERVE = re.compile(r"prenot|tavolo|riserv", re.IGNORECASE)
-_MENU = re.compile(r"men[uù]|carta|piatti|mangiare", re.IGNORECASE)
-_INFO = re.compile(r"dove|indirizzo|posizione|telefono|contatt|orari|apert", re.IGNORECASE)
-_CANCEL = re.compile(r"cancell|annulla|elimina", re.IGNORECASE)
-_MODIFY = re.compile(r"modifica|cambia|sposta", re.IGNORECASE)
-_PARTY = re.compile(r"(\d{1,2})\s*(person|posti|ospiti|siamo in)")
-_TIME = re.compile(r"(\d{1,2})(?:[:.](\d{2}))?\s*(?:alle|ore)?", re.IGNORECASE)
+
+class Phase(str, Enum):
+    """Where the conversation is (same two phases as the chat bot)."""
+
+    REGISTRATION = "registration"
+    CHAT = "chat"
 
 
 class BackendOrchestrator(AbstractLLMOrchestrator):
-    """Orchestrator bound to a BackendClient (streaming LLM on BE)."""
+    """One caller's conversation with the BE, with the chat bot's rules."""
 
     def __init__(
         self,
         backend: BackendClient,
-        system_prompt: str,
+        system_prompt: str = "",
         max_history: int = 12,
-        token_timeout_s: float = 30.0,
+        language: str = "it",
+        require_registration: bool = True,
+        use_ner: bool | None = None,
     ) -> None:
         self._backend = backend
-        self._system = system_prompt
+        self._system = build_system_prompt(system_prompt)
         self._max_history = max_history
-        self._token_timeout = token_timeout_s
+        self._language = normalize_language(language)
+        self._require_registration = require_registration
+        self._use_ner = use_ner
+        self.history: list[ChatMessage] = []
+        self._start()
+
+    # ---------------- state ----------------
+
+    def _start(self) -> None:
         self.session_id = f"voice_{uuid.uuid4().hex[:8]}"
-        self.customer_id = f"anon_{uuid.uuid4().hex[:8]}"
-        self.history: list[ChatMessage] = [ChatMessage(role="system", content=system_prompt)]
+        # Replaced by the BE's id once the customer is registered (like chat/api.py).
+        self.customer_id = f"anon_{uuid.uuid4().hex[:6]}"
+        self.anonymizer = Anonymizer(use_model=self._use_ner)
+        self.dialog = RegistrationDialog(self._language)
+        self.phase = Phase.REGISTRATION if self._require_registration else Phase.CHAT
+        self.history = [ChatMessage(role="system", content=self._system)]
 
     def reset(self) -> None:
-        """Clear history back to the system prompt."""
-        sys_msg = self.history[0] if self.history else ChatMessage(role="system", content=self._system)
-        self.history = [sys_msg]
+        """Start a brand-new conversation: new session, new customer, empty placeholder map."""
+        self._start()
 
-    def _push(self, msg: ChatMessage) -> None:
-        self.history.append(msg)
-        # Keep system + last N turns.
-        if len(self.history) > self._max_history + 1:
-            self.history = [self.history[0]] + self.history[-self._max_history:]
+    @property
+    def registered(self) -> bool:
+        """True once the BE has issued a real (non-anonymous) customer id."""
+        return not self.customer_id.startswith("anon_")
+
+    def _remember(self, role: str, content: str) -> None:
+        self.history.append(ChatMessage(role=role, content=content))  # type: ignore[arg-type]
+        if len(self.history) > self._max_history + 1:  # keep the system prompt + last N
+            self.history = [self.history[0]] + self.history[-self._max_history :]
+
+    # ---------------- public API ----------------
+
+    async def opening(self) -> str:
+        """First thing said on the call: ask for contact data, or welcome."""
+        text = (
+            self.dialog.opening()
+            if self.phase is Phase.REGISTRATION
+            else say(self._language, "welcome_chat")
+        )
+        self._remember("assistant", text)
+        return text
+
+    async def reply(self, user_text: str) -> str:
+        """One complete reply through ``POST /api/chat`` (on-demand v2 mode)."""
+        local = await self._local_turn(user_text)
+        if local is not None:
+            return local
+        anonymized = await self._anonymize(user_text)
+        try:
+            data = await self._backend.chat(anonymized, self.session_id, self.customer_id)
+            text = self.anonymizer.restore(str(data["reply"]))
+        except BackendError as exc:
+            log.error("chat failed kind=%s status=%s", exc.kind, exc.status)
+            text = self._error_text(exc)
+        self._remember("assistant", text)
+        return text
 
     async def stream_reply(self, user_text: str) -> AsyncIterator[str]:
-        """Yield tokens; fast-path tool calls answer without LLM round-trip."""
+        """Yield the reply token by token through the SSE endpoint (live v1 mode)."""
+        local = await self._local_turn(user_text)
+        if local is not None:
+            yield local
+            return
+        anonymized = await self._anonymize(user_text)
+        restorer = self.anonymizer.stream_restorer()
+        spoken: list[str] = []
+        try:
+            async for token in self._backend.stream_chat(
+                anonymized, self.session_id, self.customer_id, system_prompt=self._system
+            ):
+                text = restorer.feed(token)
+                if text:
+                    spoken.append(text)
+                    yield text
+            tail = restorer.flush()
+            if tail:
+                spoken.append(tail)
+                yield tail
+            if not spoken:  # the BE answered with an empty stream
+                raise BackendError("empty reply", kind="format")
+        except BackendError as exc:
+            log.error("stream failed kind=%s status=%s", exc.kind, exc.status)
+            apology = self._error_text(exc)
+            spoken.append(apology)
+            yield apology
+        finally:
+            if spoken:
+                self._remember("assistant", "".join(spoken))
+
+    async def aclose(self) -> None:
+        """Close the BE connection."""
+        await self._backend.aclose()
+
+    # ---------------- internals ----------------
+
+    async def _anonymize(self, text: str) -> str:
+        # The NER model can take tens of ms: keep it off the event loop.
+        return await asyncio.to_thread(self.anonymizer.anonymize, text)
+
+    async def _local_turn(self, user_text: str) -> str | None:
+        """Handle turns that never reach the LLM. Returns None for a normal CHAT turn."""
         text = user_text.strip()
         if not text:
-            yield "Non ho sentito bene, puoi ripetere?"
-            return
-        self._push(ChatMessage(role="user", content=text))
-
-        shortcut = await self._tool_shortcut(text)
-        if shortcut is not None:
-            self._push(ChatMessage(role="assistant", content=shortcut))
-            yield shortcut
-            return
-
-        messages = [{"role": m.role, "content": m.content} for m in self.history]
-        full: list[str] = []
-        try:
-            async def _gen() -> AsyncIterator[str]:
-                async for tok in self._backend.stream_chat(
-                    messages,
-                    timeout_s=self._token_timeout,
-                    session_id=self.session_id,
-                    customer_id=self.customer_id,
-                ):
-                    yield tok
-
-            gen = _gen()
-            while True:
-                try:
-                    token = await asyncio.wait_for(gen.__anext__(), timeout=self._token_timeout)
-                except StopAsyncIteration:
-                    break
-                full.append(token)
-                yield token
-        except (asyncio.TimeoutError, asyncio.CancelledError):
-            log.warning("llm stream interrupted/cancelled")
-            raise
-        except Exception as exc:
-            log.error("llm stream failed: %s", exc)
-            fallback = "Mi dispiace, il servizio è momentaneamente non disponibile. Riprova tra poco."
-            self._push(ChatMessage(role="assistant", content=fallback))
-            yield fallback
-            return
-        self._push(ChatMessage(role="assistant", content="".join(full)))
-
-    async def _tool_shortcut(self, text: str) -> str | None:
-        """Direct BE calls for clear intents (menu/info/availability)."""
-        try:
-            if _MENU.search(text):
-                menu = await self._backend.get_menu()
-                return f"Ecco il nostro menu: {menu}" if menu else "Il menu di oggi prevede antipasti, primi, secondi e dolci."
-            if _INFO.search(text) and not _RESERVE.search(text):
-                info = await self._backend.get_info()
-                return f"Ecco le informazioni: {info}" if info else "Ci trovi in centro, aperti tutti i giorni dalle 12 alle 23."
-            if _RESERVE.search(text) and not (_CANCEL.search(text) or _MODIFY.search(text)):
-                party = _PARTY.search(text)
-                time = _TIME.search(text)
-                if party and time:
-                    hour = time.group(1)
-                    minute = time.group(2) or "00"
-                    avail = await self._backend.check_availability(
-                        date="2026-10-15", time=f"{hour}:{minute}", party_size=int(party.group(1))
-                    )
-                    return f"Ho verificato la disponibilità: {avail}"
-        except Exception as exc:
-            log.warning("tool shortcut failed: %s", exc)
+            return say(self._language, "didnt_hear")
+        if self.phase is Phase.REGISTRATION:
+            self._remember("user", "(registration data)")  # never keep contact data in history
+            reply = await self._registration_step(text)
+            self._remember("assistant", reply)
+            return reply
+        self._remember("user", text)
         return None
+
+    async def _registration_step(self, text: str) -> str:
+        """One step of the registration dialogue (mirrors ``gestisci_registrazione``)."""
+        reply, action = self.dialog.handle(text)
+        if action == "register":
+            try:
+                self.customer_id = await self._backend.register_customer(
+                    self.dialog.name or "", self.dialog.phone or ""
+                )
+                self.phase = Phase.CHAT
+                log.info("customer registered id=%s", self.customer_id)
+                return say(self._language, "registered", name=self.dialog.name or "")
+            except BackendError as exc:
+                self.dialog.retry_confirmation()  # data is kept: "yes" again retries
+                return say(
+                    self._language, "register_failed", error=self._error_text(exc, registration=True)
+                )
+        if action == "give_up":
+            self.phase = Phase.CHAT  # carry on with the anonymous customer id
+        return reply
+
+    def _error_text(self, exc: BackendError, registration: bool = False) -> str:
+        """A short, speakable apology: never technical details, never a stack trace."""
+        lang = self._language
+        if exc.kind == "unreachable":
+            return say(lang, "err_unreachable")
+        if exc.kind == "timeout":
+            return say(lang, "err_slow")
+        if exc.status == 503:
+            return say(lang, "err_llm_down")
+        if registration and exc.status in (404, 405):
+            return say(lang, "err_registration_unsupported")
+        if registration and exc.status is not None and 400 <= exc.status < 500:
+            return say(lang, "err_registration_rejected")
+        return say(lang, "err_server")

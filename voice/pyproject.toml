@@ -1,10 +1,9 @@
 [project]
 name = "voicebot"
-# NOTA coerenza: le dipendenze qui rispecchiano setup/requirements.txt,
-# fonte di verita' per il venv condiviso (.venv in root). Se aggiungi un
-# pacchetto, aggiungilo in entrambi i file.
-version = "1.0.0"
-description = "Voice-bot per prenotazione tavoli (Traccia 3) - pipeline audio real-time asyncio"
+# NOTE: keep these dependencies in sync with setup/requirements/*.txt (the shared
+# .venv at the repo root is built from those files). Add a package in both places.
+version = "1.1.0"
+description = "Voice bot for restaurant table booking (Traccia 3) - real-time asyncio audio pipeline"
 requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.115",
@@ -14,6 +13,7 @@ dependencies = [
   "pydantic>=2.7",
   "pydantic-settings>=2.3",
   "numpy>=1.26",
+  "phonenumbers>=8.13",
 ]
 
 [project.optional-dependencies]
@@ -32,6 +32,10 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Tests must run from any cwd and with any interpreter that has the dependencies,
+# without `pip install -e` (VS Code often picks the system Python, not .venv).
+pythonpath = ["src", "."]
+testpaths = ["tests"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -48,3 +52,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["faster_whisper.*", "piper.*", "webrtcvad.*", "sounddevice.*", "spacy.*", "winsound", "env_check"]
+ignore_missing_imports = true
