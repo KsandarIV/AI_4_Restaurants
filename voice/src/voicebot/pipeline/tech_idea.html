@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bella Napoli — L'idea in parole semplici</title>
+<title>Bella Napoli — The idea in plain words</title>
 <style>
   :root { --bg:#fffaf3; --surface:#fff; --text:#2b211b; --muted:#6e5f55;
     --accent:#b3341f; --line:#eadfce; --hero:#3a1f14; --radius:14px; }
@@ -15,9 +15,9 @@
   .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px; margin:14px 0; }
   .card b { display:block; font-size:1.1rem; }
   .card span { color:var(--muted); }
-  .dialogo { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px; font-family:system-ui,sans-serif; }
-  .dialogo p { margin:8px 0; } .tu { text-align:right; } .tu i { background:#f4e8dc; border-radius:12px; padding:6px 12px; display:inline-block; font-style:normal; }
-  .io i { background:#e8f0e8; border-radius:12px; padding:6px 12px; display:inline-block; font-style:normal; }
+  .dialog { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px; font-family:system-ui,sans-serif; }
+  .dialog p { margin:8px 0; } .you { text-align:right; } .you i { background:#f4e8dc; border-radius:12px; padding:6px 12px; display:inline-block; font-style:normal; }
+  .bot i { background:#e8f0e8; border-radius:12px; padding:6px 12px; display:inline-block; font-style:normal; }
   code { background:#f4f6f8; padding:1px 5px; border-radius:4px; }
   .toolbar { position:sticky; top:53px; background:#fff; padding:8px 0; border-bottom:1px solid var(--line); font-family:system-ui,sans-serif; }
   button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:8px 16px; cursor:pointer; }
@@ -26,34 +26,38 @@
 </style>
 </head>
 <body>
-<header class="topbar"><a class="brand" href="/prova-vocale">Bella Napoli · Voce</a>
-  <a href="/tech">Scheda tecnica</a><a href="/tech-codice">Come è fatto il codice</a></header>
+<header class="topbar"><a class="brand" href="/prova-vocale">Bella Napoli · Voice</a>
+  <a href="/tech">Technical sheet</a><a href="/tech-codice">How the code works</a></header>
 <div class="toolbar"><main style="padding:0 24px">
-  <button onclick="window.print()">Stampa / Salva PDF</button></main></div>
+  <button onclick="window.print()">Print / Save PDF</button></main></div>
 <main>
-  <h1>Prenotare un tavolo parlando: l'idea in parole semplici</h1>
-  <p>Immagina un cameriere attentissimo che non dorme mai, non fraintende gli orari e non
-  dimentica le prenotazioni. Il nostro assistente vocale fa proprio questo, con quattro aiutanti:</p>
-  <div class="card"><b>👂 Le orecchie</b><span>Capiscono quando inizi a parlare e quando fai una pausa. Niente pulsanti: basta parlare.</span></div>
-  <div class="card"><b>✍️ Il traduttore</b><span>Trasforma la tua voce in testo scritto, all'istante, sul nostro computer (niente va su internet).</span></div>
-  <div class="card"><b>🧠 Il cervello</b><span>Legge la richiesta, controlla tavoli liberi, menu e orari, e decide la risposta — come farebbe il migliore dei receptionist.</span></div>
-  <div class="card"><b>🗣️ La voce</b><span>Rilegge la risposta ad alta voce in italiano, iniziando a parlare prima ancora di aver finito di pensare.</span></div>
+  <h1>Booking a table by talking: the idea in plain words</h1>
+  <p>Picture a very attentive waiter who never sleeps, never mishears a time and never forgets a
+  booking. Our voice assistant does exactly that, with four helpers:</p>
+  <div class="card"><b>👂 The ears</b><span>They notice when you start talking and when you pause. No buttons: just talk.</span></div>
+  <div class="card"><b>✍️ The translator</b><span>It turns your voice into written text, instantly, on our own computer (nothing goes to the internet).</span></div>
+  <div class="card"><b>🧠 The brain</b><span>It reads the request, checks free tables, the menu and opening hours, and decides the answer — like the best receptionist would.</span></div>
+  <div class="card"><b>🗣️ The voice</b><span>It reads the answer aloud, starting to speak before it has even finished thinking.</span></div>
 
-  <h2>Una telefonata d'esempio</h2>
-  <div class="dialogo">
-    <p class="tu"><i>Vorrei un tavolo per due domani sera.</i></p>
-    <p class="io"><i>Volentieri! Per che ora? E a che nome lo segno?</i></p>
-    <p class="tu"><i>Alle otto, Rossi… no aspetti, alle otto e mezza!</i></p>
-    <p class="io"><i>Nessun problema: tavolo per due domani alle 20:30 a nome Rossi. Codice RES-9A8B2C.</i></p>
+  <h2>An example call</h2>
+  <div class="dialog">
+    <p class="bot"><i>Welcome! To manage bookings I need your name and a phone number.</i></p>
+    <p class="you"><i>Mario Rossi, 333 123 4567.</i></p>
+    <p class="bot"><i>I understood: Mario Rossi, phone 3 3 3, 1 2 3, 4 5 6 7. Is that correct?</i></p>
+    <p class="you"><i>Yes.</i></p>
+    <p class="bot"><i>Thank you Mario! How can I help?</i></p>
+    <p class="you"><i>A table for two tomorrow at eight… no wait, half past eight!</i></p>
+    <p class="bot"><i>Table for two tomorrow at 20:30. Do you confirm? … Booking confirmed, code R E S, 9 A 8 B 2 C.</i></p>
   </div>
-  <p>Nota: quando hai detto “no aspetti”, l'assistente <b>si è fermato e ti ha riascoltato</b> —
-  come una persona educata. E il tuo numero di telefono non è mai uscito dalle nostre macchine.</p>
+  <p>Note: when you said “no wait”, the assistant <b>stopped and listened again</b> —
+  like a polite person would. And your name and phone number never reach the AI model: they are
+  stored by the restaurant's system only so the staff can contact you.</p>
 
-  <h2>Perché conviene al ristorante</h2>
+  <h2>Why it suits the restaurant</h2>
   <ul>
-    <li>Risponde sempre, anche a mezzanotte e col telefono che squilla.</li>
-    <li>Niente app da installare per i clienti: basta il sito.</li>
-    <li>Tutto in casa: nessun abbonamento a servizi esterni, nessun dato fuori.</li>
+    <li>It always answers, even at midnight with the phone ringing.</li>
+    <li>Nothing to install for customers: just the website.</li>
+    <li>Everything in-house: no subscription to external services, no data leaves the premises.</li>
   </ul>
 </main>
 </body>

@@ -32,3 +32,20 @@ Come testare: `cd voice && ..\.venv\Scripts\python -m pytest tests -q` (18 test)
 Branch/commit: su `savov`, da fondere in `main`.
 Attenzione: `lan/macchina.json` e `.env` sono locali per macchina (mai in git);
 `voice/models/` ignorato; primo `setup --role <ruolo>` per macchina.
+
+## Handoff 2026-10-15 (evening) — VOICE rework (English), from VOICE to team
+Status: done and verified locally; **not yet tried on the three machines**.
+Done: the voice bot now behaves exactly like the chat bot (registration by voice -> `POST /api/customers`,
+same anonymiser and `[TYPE_N]` placeholders, BE `/api/chat` + `/api/chat/stream`, no local shortcuts).
+v1 live and v2 on-demand share one engine. Fixed: Piper 1.8 API (TTS never worked with the real model),
+VAD pause timing with browser chunks (was 6x too long), models reloaded per call, barge-in could not cancel a
+thinking turn, tests failing under the system Python. New: `python -m voicebot.doctor`, `/diag`, `live_client`
+(mic without browser, auto-reconnect), English prompt `voice/src/voicebot/prompts.py`, `voice/Dockerfile`.
+To do (BE team): make `backend/graph/prompts.py` voice prompt match `voice/src/voicebot/prompts.py`; the BE reads only
+the last user message, so the system prompt sent by VOICE is a specification, not yet an instruction.
+How to test: `cd voice && ..\.venv\Scripts\python -m pytest tests -q` (~120 tests), `python -m mypy src`,
+`python -m voicebot.doctor`; manual: `python -m voicebot` then http://localhost:8003/prova-vocale.
+Shared files touched: `.env.example` (VOICE section only), `setup/requirements/voice.txt` (+phonenumbers),
+`setup/requirements/dev.txt` (+mypy), `docs/FLUSSO.md` (voice sections). Re-run `python entrypoint\avvia.py`
+on the VOICE machine to install `phonenumbers`. Default `STT_MODEL` is now `small` (downloaded on first start).
+Attention: `.env` on the VOICE machine may still contain old `LLM_SYSTEM_PROMPT` / `STT_MODEL=tiny` lines.

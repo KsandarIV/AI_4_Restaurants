@@ -37,13 +37,19 @@ Rete: 3 PC sulla stessa LAN (`10.10.x`). Solo HTTP/WebSocket tra macchine, mai i
 
 Browser/mic → PCM16LE 16 kHz → `ws://VOICE:8003/ws/voice` → VAD → STT whisper →
 `POST /api/chat/stream` SSE → token → TTS Piper per-frase → PCM al browser.
-Barge-in: nuova voce cancella il turno (`{"event":"barge_in"}`).
+Barge-in: voce > `BARGE_IN_MIN_MS` mentre il bot parla cancella il turno (`{"event":"barge_in"}`).
+Identico alla chat: il bot parla per primo e chiede nome+telefono (fase di registrazione, solo
+`POST /api/customers`, mai l'LLM), poi ogni frase passa da anonimizza → BE → ripristina.
+Dal PC con microfono senza browser: `python -m voicebot.live_client ws://VOICE:8003/ws/voice`.
+Se qualcosa non va: `python -m voicebot.doctor` (o `http://VOICE:8003/diag`).
 
 ## Flusso voce v2 (on-demand, come la chat)
 
-Mic locale (sounddevice, niente browser) → STT → `POST /api/chat` sincrono →
-risposta completa → TTS → altoparlante. Gira su **qualsiasi PC**
-(anche BEpresentatore): il mic è sempre quello locale al processo.
+Mic locale (sounddevice, niente browser) → STT → conversazione identica alla chat
+(registrazione, anonimizza, `POST /api/chat` sincrono) → risposta completa → TTS → altoparlante.
+Gira su **qualsiasi PC** (anche BE/presentatore): il mic è sempre quello locale al processo.
+Con `CHAT_SERVICE_URL=http://CHAT:8002` appoggia invece il servizio `chat/api.py` (il chatbot
+lavora "sotto", invisibile): `python -m voicebot.v2` (`--text` per provare da tastiera).
 
 ## Flusso chat (sito + Streamlit)
 
