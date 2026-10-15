@@ -32,3 +32,33 @@ Come testare: `cd voice && ..\.venv\Scripts\python -m pytest tests -q` (18 test)
 Branch/commit: su `savov`, da fondere in `main`.
 Attenzione: `lan/macchina.json` e `.env` sono locali per macchina (mai in git);
 `voice/models/` ignorato; primo `setup --role <ruolo>` per macchina.
+
+## Handoff 2026-10-15 (evening) — VOICE rework (English), from VOICE to team
+Status: done and verified locally; **not yet tried on the three machines**.
+Done: the voice bot now behaves exactly like the chat bot (registration by voice -> `POST /api/customers`,
+same anonymiser and `[TYPE_N]` placeholders, BE `/api/chat` + `/api/chat/stream`, no local shortcuts).
+v1 live and v2 on-demand share one engine. Fixed: Piper 1.8 API (TTS never worked with the real model),
+VAD pause timing with browser chunks (was 6x too long), models reloaded per call, barge-in could not cancel a
+thinking turn, tests failing under the system Python. New: `python -m voicebot.doctor`, `/diag`, `live_client`
+(mic without browser, auto-reconnect), English prompt `voice/src/voicebot/prompts.py`, `voice/Dockerfile`.
+To do (BE team): make `backend/graph/prompts.py` voice prompt match `voice/src/voicebot/prompts.py`; the BE reads only
+the last user message, so the system prompt sent by VOICE is a specification, not yet an instruction.
+How to test: `cd voice && ..\.venv\Scripts\python -m pytest tests -q` (~120 tests), `python -m mypy src`,
+`python -m voicebot.doctor`; manual: `python -m voicebot` then http://localhost:8003/prova-vocale.
+Shared files touched: `.env.example` (VOICE section only), `setup/requirements/voice.txt` (+phonenumbers),
+`setup/requirements/dev.txt` (+mypy), `docs/FLUSSO.md` (voice sections). Re-run `python entrypoint\avvia.py`
+on the VOICE machine to install `phonenumbers`. Default `STT_MODEL` is now `small` (downloaded on first start).
+Attention: `.env` on the VOICE machine may still contain old `LLM_SYSTEM_PROMPT` / `STT_MODEL=tiny` lines.
+
+## Handoff 2026-10-15 (night) — VOICE: commands, site, spoken report, from VOICE to team
+Status: done and tested locally (150+ tests, mypy strict, real Whisper/Piper against the stub BE); **three-machine run not yet tried**.
+New: `voiceoice local` = complete local test (stub BE + voice + browser, banner "LOCAL TEST"); the real flow is still
+`python entrypointvvia.py`; also `voiceoice real|doctor|v2|live|test` (= `python -m voicebot <cmd>`).
+New: voice site at `http://VOICE:8003/` (same look as `frontend/`, copied CSS) with the assistant and **My reservations**
+(live status from `GET /api/reservations/{code}?customer_id=`, only the owner can read a code).
+New: after a booking/change/cancellation the bot reads the real data back by voice and asks a last yes
+(built by code, not by the LLM; "yes, but..." goes to the agent as a change request).
+Fixed: a phone number cut in two utterances by a pause is joined; Whisper prompt off by default (it was echoed back).
+Shared files touched: `docs/FLUSSO.md`, `docs/HANDOFF.md`, `.env.example` (VOICE section). The BE was not touched.
+Attention: the BE has no "list my reservations" endpoint, so the page keeps the codes of this browser (localStorage);
+a `GET /api/customers/{id}/reservations` would let any browser show them all (BE team decision).

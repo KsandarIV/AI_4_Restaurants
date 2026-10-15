@@ -1,30 +1,70 @@
-"""Tech page + documentazione: la pagina /tech esiste e cita i punti chiave."""
+"""Pages and docs: they exist, are in English and mention what the code really does."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+PAGES = Path(__file__).parent.parent / "src" / "voicebot" / "pipeline"
+VOICE = Path(__file__).parent.parent
 
-def test_tech_page_content() -> None:
-    html = (Path(__file__).parent.parent / "src" / "voicebot" / "pipeline" / "tech.html").read_text(
-        encoding="utf-8"
-    )
-    for expected in ("barge-in", "gemma4:12b", "Piper", "faster-whisper",
-                     "/api/chat/stream", "Stampa / Salva PDF", "window.print"):
+
+def test_tech_pages_content() -> None:
+    tech = (PAGES / "tech.html").read_text(encoding="utf-8")
+    for expected in ("barge-in", "gemma4:12b", "Piper", "faster-whisper", "/api/chat/stream",
+                     "POST /api/customers", "Print / Save PDF", "window.print", "voicebot.doctor"):
+        assert expected in tech
+    code = (PAGES / "tech_codice.html").read_text(encoding="utf-8")
+    for expected in ("session.py", "vad.py", "stt.py", "orchestrator.py", "tts.py", "anonymizer.py",
+                     "audio_in_q", "barge-in", "Print / Save PDF"):
+        assert expected in code
+    idea = (PAGES / "tech_idea.html").read_text(encoding="utf-8").lower()
+    for expected in ("ears", "translator", "brain", "res", "stopped"):
+        assert expected in idea
+
+
+def test_pages_do_not_claim_removed_features() -> None:
+    """The old shortcuts and the old PII tags are gone: the docs must not advertise them."""
+    for name in ("tech.html", "tech_codice.html", "tech_idea.html"):
+        text = (PAGES / name).read_text(encoding="utf-8")
+        assert "tool shortcut" not in text.lower() and "[EMAIL]" not in text
+
+
+def test_voice_test_page_has_what_the_flow_needs() -> None:
+    html = (PAGES / "voice_test.html").read_text(encoding="utf-8")
+    for expected in ("/ws/voice", "getUserMedia", "prova-vocale", "isSecureContext", "tts_sample_rate",
+                     "/tech-codice", "/tech-idea", "echoCancellation", "requestAnimationFrame",
+                     "transcript", "reply", "barge_in", "thinking", "heard", "loading",
+                     "pollDiag", "evlog", "setTimeout(connect", "Math.min(500 * 2 ** retry"):
         assert expected in html
 
 
-def test_documentazione_exists() -> None:
-    doc = (Path(__file__).parent.parent / "documentazione.md").read_text(encoding="utf-8")
-    for expected in ("Checklist test incrociati", "Punti di forza", "gemma4:12b",
-                     "BACKEND_BASE_URL", "booking_code"):
+def test_voice_pages_live_vs_test() -> None:
+    """The live and the TEST page differ in title; only the TEST one has the BE banner."""
+    from voicebot.pipeline.server import _page
+
+    live = _page("voice_test.html", test=False, be_url="http://be-live:8000")
+    test = _page("voice_test.html", test=True, be_url="http://localhost:8000")
+    assert "{{TITLE_SUFFIX}}" not in live and "{{TEST_BANNER}}" not in live
+    assert "VOICE / TESTS" in test and "http://localhost:8000" in test
+    assert "VOICE / TESTS" not in live
+    assert "Bella Napoli · Voice</a>" in live
+
+
+def test_documentation_matches_the_code() -> None:
+    doc = (VOICE / "documentazione.md").read_text(encoding="utf-8")
+    for expected in ("voicebot.doctor", "voicebot.v2", "voicebot.live_client", "/api/customers",
+                     "BACKEND_BASE_URL", "Cross-test checklist", "barge-in", "CHAT_SERVICE_URL",
+                     "VOICE_LANGUAGE", "REQUIRE_REGISTRATION"):
         assert expected in doc
+    readme = (VOICE / "README_VOICE.md").read_text(encoding="utf-8")
+    for expected in ("orchestrator.py", "contacts.py", "anonymizer.py", "diagnostics.py", "Dockerfile"):
+        assert expected in readme
 
 
-def test_voice_test_page() -> None:
-    html = (Path(__file__).parent.parent / "src" / "voicebot" / "pipeline" / "voice_test.html").read_text(
-        encoding="utf-8"
-    )
-    for expected in ("/ws/voice", "getUserMedia", "AudioContext", "prova-vocale", "localhost",
-                     "isSecureContext", "interrompere"):
-        assert expected in html
+def test_prompt_defines_role_and_actions() -> None:
+    from voicebot.prompts import VOICE_AGENT_PROMPT, build_system_prompt
+
+    for section in ("# ROLE", "# CHANNEL RULES", "# ACTIONS", "# CONFIRMATION", "# PRIVACY", "# ALLERGIES"):
+        assert section in VOICE_AGENT_PROMPT
+    assert build_system_prompt("") == VOICE_AGENT_PROMPT
+    assert build_system_prompt("  custom  ") == "custom"

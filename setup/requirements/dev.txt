@@ -1,3 +1,4 @@
 # Test (solo macchine di sviluppo / test singolo: setup --role all).
 pytest>=8.0.0
 pytest-asyncio>=0.23
+mypy>=1.10  # tipi (voice: cd voice && python -m mypy src)

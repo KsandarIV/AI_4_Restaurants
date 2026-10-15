@@ -1,27 +1,25 @@
-"""Async HTTP client toward the BE (separate LAN machine, backend/api/routes.py).
+"""Async HTTP client toward the BE (a separate LAN machine, ``backend/api/routes.py``).
 
-Real BE contract (mounted at /api AND at root):
-  GET  {base}/health | {base}/api/health   -> {status, restaurant, llm_provider, ...}
-  POST {base}/api/chat        {message, session_id, customer_id, client_type} -> {reply, ...}
-  POST {base}/api/chat/stream {messages|message, session_id, customer_id, client_type}
-                               SSE: `data: {"token": "..."}` ... `data: [DONE]`
-                               (BE runs full LangGraph inference, THEN streams word-by-word)
-  GET  {base}/api/availability?date=YYYY-MM-DD&time=HH:MM&party_size=N|guests=N
-  POST {base}/api/reservations              {date,time,guests|party_size,customer_id|name,...}
-  GET  {base}/api/reservations/{booking_code}
-  PATCH|PUT {base}/api/reservations/{booking_code}
-  DELETE {base}/api/reservations/{booking_code}
-  GET  {base}/api/menu[?category&allergen_free&is_vegetarian&is_vegan&is_gluten_free]
-  GET  {base}/api/info[?key=address|opening_hours|phone|parking]
+Contract actually used by the voice bot (same endpoints as the chat bot):
 
-All requests have timeouts + exponential-backoff retries (re-connection logic).
+  GET  /api/health                  readiness + model info
+  POST /api/customers               {name, phone, consent} -> {customer_id}
+  POST /api/chat                    {message, session_id, customer_id, client_type} -> {reply}
+  POST /api/chat/stream             same body; SSE ``data: {"token": ".."}`` ... ``data: [DONE]``
+                                    (the BE runs the whole LLM turn first, then streams the
+                                    words, so the first token costs one full inference)
+
+Resilience: every call has timeouts; idempotent calls retry with exponential backoff; the
+non-idempotent ``POST /api/chat`` is retried only when the connection could not even be
+established (a retry after a read timeout could book a table twice).
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
@@ -32,11 +30,20 @@ log = get_logger("backend")
 
 
 class BackendError(RuntimeError):
-    """Non-retryable or exhausted BE failure."""
+    """The BE failed in a way the caller should turn into an apology."""
+
+    def __init__(self, message: str, status: int | None = None, kind: str = "http") -> None:
+        super().__init__(message)
+        self.status = status  # HTTP status when there was a response
+        self.kind = kind  # "unreachable" | "timeout" | "http" | "format"
+
+
+def _backoff(attempt: int) -> float:
+    return float(min(0.5 * 2.0**attempt, 4.0))
 
 
 class BackendClient:
-    """Resilient async client for the BE with retry/backoff on every call."""
+    """Resilient async client for the BE."""
 
     def __init__(
         self,
@@ -45,13 +52,21 @@ class BackendClient:
         api_key: str = "",
         chat_stream_path: str = "/api/chat/stream",
         max_retries: int = 3,
+        chat_timeout_s: float = 120.0,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._base = base_url.rstrip("/")
-        self._timeout = httpx.Timeout(timeout_s)
+        self._timeout = httpx.Timeout(timeout_s, connect=min(5.0, timeout_s))
+        self._chat_timeout = httpx.Timeout(chat_timeout_s, connect=min(5.0, timeout_s))
         self._api_key = api_key
-        self._chat_path = chat_stream_path
-        self._max_retries = max_retries
-        self._client = httpx.AsyncClient(base_url=self._base, timeout=self._timeout)
+        self._chat_stream_path = chat_stream_path
+        self._max_retries = max(1, max_retries)
+        self._client = httpx.AsyncClient(base_url=self._base, timeout=self._timeout, transport=transport)
+
+    @property
+    def base_url(self) -> str:
+        """The BE address this client talks to."""
+        return self._base
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -59,114 +74,164 @@ class BackendClient:
             headers["Authorization"] = f"Bearer {self._api_key}"
         return headers
 
-    async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        """HTTP request with scrub + exponential backoff. Returns parsed JSON."""
-        last_exc: Exception | None = None
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        timeout: httpx.Timeout | None = None,
+    ) -> Any:
+        """One HTTP call with retry/backoff. Returns the parsed JSON body."""
+        idempotent = method.upper() in ("GET", "HEAD", "DELETE", "PUT")
+        last: Exception | None = None
+        kind = "unreachable"
         for attempt in range(1, self._max_retries + 1):
             try:
-                resp = await self._client.request(method, path, headers=self._headers(), **kwargs)
-                resp.raise_for_status()
+                resp = await self._client.request(
+                    method, path, headers=self._headers(), json=json_body, params=params,
+                    timeout=timeout or self._timeout,
+                )
+                if resp.status_code >= 500 and idempotent and attempt < self._max_retries:
+                    log.warning("backend %s %s -> %d, retry %d", method, path, resp.status_code, attempt)
+                    await asyncio.sleep(_backoff(attempt))
+                    continue
+                if resp.status_code >= 400:
+                    raise BackendError(
+                        f"BE {resp.status_code} on {method} {path}: {resp.text[:200]}",
+                        status=resp.status_code,
+                    )
                 if not resp.content:
                     return {}
                 try:
                     return resp.json()
-                except ValueError:
-                    return {"raw": resp.text}
-            except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
-                last_exc = exc
-                log.warning("backend retry %d/%d %s %s: %s", attempt, self._max_retries, method, path, exc)
-                await asyncio.sleep(min(2.0**attempt, 8.0))
-            except httpx.HTTPStatusError as exc:
-                if exc.response is not None and 500 <= exc.response.status_code < 600 and attempt < self._max_retries:
-                    last_exc = exc
-                    await asyncio.sleep(min(2.0**attempt, 8.0))
-                    continue
-                raise BackendError(f"BE {exc.response.status_code if exc.response else '?'}: {exc}") from exc
-        raise BackendError(f"BE unreachable after {self._max_retries} attempts: {last_exc}")
+                except ValueError as exc:
+                    raise BackendError(f"BE returned invalid JSON on {path}", kind="format") from exc
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                last = exc  # never reached the BE: always safe to retry
+                kind = "unreachable"
+            except httpx.TimeoutException as exc:
+                last = exc
+                kind = "timeout"
+                if not idempotent:
+                    raise BackendError(f"BE timeout on {method} {path}", kind=kind) from exc
+            except httpx.TransportError as exc:
+                last = exc
+                kind = "unreachable"
+                if not idempotent:
+                    raise BackendError(f"BE connection lost on {method} {path}: {exc}", kind=kind) from exc
+            if attempt < self._max_retries:
+                log.warning("backend retry %d/%d %s %s: %s", attempt, self._max_retries, method, path, last)
+                await asyncio.sleep(_backoff(attempt))
+        raise BackendError(
+            f"BE unreachable after {self._max_retries} attempts: {last}", kind=kind
+        )
+
+    # ---------------- public API ----------------
+
+    async def health_info(self) -> dict[str, Any]:
+        """``GET /api/health`` (falls back to ``/health``). Raises BackendError."""
+        try:
+            data = await self._request("GET", "/api/health")
+        except BackendError as exc:
+            if exc.status != 404:
+                raise
+            data = await self._request("GET", "/health")
+        return data if isinstance(data, dict) else {}
 
     async def health(self) -> bool:
-        """Return True when the BE answers."""
+        """True when the BE answers its health check."""
         try:
-            await self._request("GET", "/health")
+            await self.health_info()
             return True
         except BackendError:
             return False
 
-    async def get_menu(self) -> Any:
-        """Fetch restaurant menu."""
-        return await self._request("GET", "/api/menu")
-
     async def get_info(self) -> Any:
-        """Fetch position/contacts/hours."""
+        """``GET /api/info`` (restaurant address, phone, hours)."""
         return await self._request("GET", "/api/info")
 
-    async def check_availability(self, date: str, time: str, party_size: int) -> Any:
-        """Check table availability."""
-        return await self._request(
-            "GET", "/api/availability", params={"date": date, "time": time, "party_size": party_size}
+    async def get_reservation(self, booking_code: str, customer_id: str) -> dict[str, Any]:
+        """``GET /api/reservations/{code}?customer_id=`` - only the owner can read it (404 otherwise)."""
+        data = await self._request(
+            "GET", f"/api/reservations/{booking_code}", params={"customer_id": customer_id}
         )
+        if not isinstance(data, dict):
+            raise BackendError("BE /api/reservations: unexpected response", kind="format")
+        return data
 
-    async def create_reservation(self, date: str, time: str, party_size: int, name: str) -> Any:
-        """Create a reservation (BE maps name -> anonymous customer_id)."""
-        log.info("create_reservation date=%s time=%s party=%d name=%s", date, time, party_size, scrub_pii(name))
-        return await self._request(
-            "POST", "/api/reservations",
-            content=json.dumps({"date": date, "time": time, "party_size": party_size, "name": name}),
+    async def register_customer(self, name: str, phone: str) -> str:
+        """Register name + phone (E.164) and return the anonymous ``customer_id``.
+
+        This is the ONLY call that carries personal data, exactly as in the chat bot.
+        """
+        log.info("register_customer phone=%s", phone[:4] + "***")  # never log personal data
+        data = await self._request(
+            "POST", "/api/customers", json_body={"name": name, "phone": phone, "consent": True}
         )
+        customer_id = data.get("customer_id") if isinstance(data, dict) else None
+        if not customer_id:
+            raise BackendError("BE /api/customers: unexpected response", kind="format")
+        return str(customer_id)
 
-    async def get_reservation(self, booking_code: str) -> Any:
-        """Fetch a reservation by its booking code (e.g. RES-9A8B2C)."""
-        return await self._request("GET", f"/api/reservations/{booking_code}")
-
-    async def modify_reservation(
+    async def chat(
         self,
-        booking_code: str,
-        new_date: str | None = None,
-        new_time: str | None = None,
-        new_party_size: int | None = None,
-    ) -> Any:
-        """Modify date/time/party of a reservation by booking code."""
-        body: dict[str, Any] = {}
-        if new_date is not None:
-            body["new_date"] = new_date
-        if new_time is not None:
-            body["new_time"] = new_time
-        if new_party_size is not None:
-            body["new_guests"] = new_party_size
-        return await self._request("PATCH", f"/api/reservations/{booking_code}", content=json.dumps(body))
-
-    async def cancel_reservation(self, booking_code: str) -> Any:
-        """Cancel a reservation by booking code."""
-        return await self._request("DELETE", f"/api/reservations/{booking_code}")
+        message: str,
+        session_id: str,
+        customer_id: str,
+        client_type: str = "voice",
+    ) -> dict[str, Any]:
+        """Non-streaming turn (``POST /api/chat``): one complete reply for one question."""
+        payload = {
+            "message": scrub_pii(message),
+            "session_id": session_id,
+            "customer_id": customer_id,
+            "client_type": client_type,
+        }
+        result = await self._request(
+            "POST", "/api/chat", json_body=payload, timeout=self._chat_timeout
+        )
+        if not isinstance(result, dict) or "reply" not in result:
+            raise BackendError(f"BE /api/chat: unexpected response: {result!r:.200}", kind="format")
+        return result
 
     async def stream_chat(
         self,
-        messages: list[dict[str, str]],
-        timeout_s: float = 30.0,
-        session_id: str = "voice_sess",
-        customer_id: str = "anon_voice",
+        message: str,
+        session_id: str,
+        customer_id: str,
         client_type: str = "voice",
+        system_prompt: str = "",
     ) -> AsyncIterator[str]:
-        """Yield LLM tokens from the BE SSE stream with auto-reconnect (1 retry).
+        """Yield the reply token by token from the SSE endpoint.
 
-        Sends BE-native session/customer/client fields so LangGraph memory works
-        across turns. BE streams ``data: {"token": "..."}`` lines terminated by
-        ``data: [DONE]``.
+        If the connection fails *before the first token* it reconnects once; after the
+        first token a failure ends the stream (replaying would repeat words aloud).
         """
+        messages: list[dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": scrub_pii(message)})
         payload = {
-            "messages": [{"role": m["role"], "content": scrub_pii(m["content"])} for m in messages],
+            "messages": messages,
             "stream": True,
             "session_id": session_id,
             "customer_id": customer_id,
             "client_type": client_type,
         }
+        started = False
         for attempt in (1, 2):
             try:
                 async with self._client.stream(
-                    "POST", self._chat_path, headers=self._headers(),
-                    content=json.dumps(payload), timeout=httpx.Timeout(timeout_s),
+                    "POST", self._chat_stream_path, headers=self._headers(),
+                    json=payload, timeout=self._chat_timeout,
                 ) as resp:
-                    resp.raise_for_status()
+                    if resp.status_code >= 400:
+                        body = (await resp.aread()).decode("utf-8", "replace")[:200]
+                        raise BackendError(
+                            f"BE {resp.status_code} on stream: {body}", status=resp.status_code
+                        )
                     async for line in resp.aiter_lines():
                         line = line.strip()
                         if not line.startswith("data:"):
@@ -180,36 +245,22 @@ class BackendClient:
                             continue
                         token = obj.get("token") or obj.get("content") or obj.get("delta") or ""
                         if token:
+                            started = True
                             yield str(token)
                     return
-            except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
-                log.warning("chat stream reconnect attempt=%d err=%s", attempt, exc)
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
                 if attempt == 2:
-                    raise BackendError(f"chat stream failed: {exc}") from exc
-                await asyncio.sleep(1.0 * attempt)
-
-    async def chat(
-        self,
-        message: str,
-        session_id: str = "voice_v2",
-        customer_id: str = "anon_voice",
-        client_type: str = "voice",
-    ) -> dict[str, Any]:
-        """Non-streaming chat (POST /api/chat), uguale a chat/app.py.
-
-        Usata dalla v2 on-demand: una risposta completa per una domanda completa.
-        """
-        payload = {
-            "message": scrub_pii(message),
-            "session_id": session_id,
-            "customer_id": customer_id,
-            "client_type": client_type,
-        }
-        result = await self._request("POST", "/api/chat", content=json.dumps(payload))
-        if not isinstance(result, dict) or "reply" not in result:
-            raise BackendError(f"BE /api/chat: risposta inattesa: {result!r:.200}")
-        return result
+                    raise BackendError(f"BE unreachable: {exc}", kind="unreachable") from exc
+                log.warning("chat stream reconnect: %s", exc)
+                await asyncio.sleep(_backoff(attempt))
+            except httpx.TimeoutException as exc:
+                raise BackendError("BE timeout while streaming", kind="timeout") from exc
+            except httpx.TransportError as exc:
+                if started or attempt == 2:
+                    raise BackendError(f"BE stream lost: {exc}", kind="unreachable") from exc
+                log.warning("chat stream reconnect: %s", exc)
+                await asyncio.sleep(_backoff(attempt))
 
     async def aclose(self) -> None:
-        """Close underlying HTTP connections."""
+        """Close the underlying HTTP connections."""
         await self._client.aclose()

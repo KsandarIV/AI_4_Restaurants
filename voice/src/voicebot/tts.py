@@ -1,100 +1,131 @@
-"""Local TTS backends: Piper (streaming, sentence-chunked) + fake sine generator."""
+"""Local text-to-speech: Piper (sentence-chunked streaming) and a fake tone generator."""
 
 from __future__ import annotations
 
 import asyncio
+import io
 import math
 import struct
-from typing import AsyncIterator
+import threading
+import wave
+from abc import abstractmethod
+from collections.abc import AsyncIterator
+from typing import Any
 
-from .audio import split_sentences
+from .audio import SentenceChunker, speakable
+from .config import resolve_path
 from .interfaces import AbstractTTS
+from .logging_json import get_logger
+
+log = get_logger("tts")
 
 
-class FakeTTS(AbstractTTS):
-    """Offline TTS stub generating a short beep per sentence (keeps pipeline testable)."""
+class _SentenceTTS(AbstractTTS):
+    """Shared streaming logic: text tokens -> complete sentences -> audio chunks.
+
+    Audio for a sentence is produced as soon as the sentence is complete, i.e.
+    while the LLM is still generating the rest of the reply.
+    """
+
+    @abstractmethod
+    def _synth(self, sentence: str) -> bytes:
+        """Blocking synthesis of one sentence to PCM16LE (runs in a worker thread)."""
+        raise NotImplementedError
+
+    async def synthesize_stream(self, text_stream: AsyncIterator[str]) -> AsyncIterator[bytes]:
+        """Yield one audio chunk per sentence while tokens arrive (cancellable)."""
+        chunker = SentenceChunker()
+        async for token in text_stream:
+            for sentence in chunker.feed(token):
+                audio = await self._speak(sentence)
+                if audio:
+                    yield audio
+        for sentence in chunker.flush():
+            audio = await self._speak(sentence)
+            if audio:
+                yield audio
+
+    async def _speak(self, sentence: str) -> bytes:
+        text = speakable(sentence)
+        if not text:
+            return b""
+        return await asyncio.to_thread(self._synth, text)
+
+
+class FakeTTS(_SentenceTTS):
+    """Offline TTS: a 200 ms 440 Hz tone per sentence. Keeps the pipeline testable."""
 
     def __init__(self, sample_rate: int = 22050) -> None:
         self.sample_rate = sample_rate
+        self.spoken: list[str] = []  # what would have been said (asserted in tests)
 
-    async def synthesize_stream(self, text_stream: AsyncIterator[str]) -> AsyncIterator[bytes]:
-        """Yield 200 ms 440 Hz sine per received sentence."""
-        buffer = ""
-        async for token in text_stream:
-            buffer += token
-            sentences = split_sentences(buffer)
-            if len(sentences) >= 2 or (buffer and buffer.strip()[-1:] in ".!?"):
-                for sent in sentences:
-                    yield self._tone(ms=200)
-                buffer = ""
-        if buffer.strip():
-            yield self._tone(ms=200)
-
-    def _tone(self, ms: int = 200, freq: float = 440.0) -> bytes:
-        n = int(self.sample_rate * ms / 1000)
+    def _synth(self, sentence: str) -> bytes:
+        self.spoken.append(sentence)
+        n = int(self.sample_rate * 0.2)
         return b"".join(
-            struct.pack("<h", int(8000 * math.sin(2 * math.pi * freq * i / self.sample_rate)))
+            struct.pack("<h", int(8000 * math.sin(2 * math.pi * 440.0 * i / self.sample_rate)))
             for i in range(n)
         )
 
 
-class PiperTTS(AbstractTTS):
-    """Local Piper TTS with true token->audio streaming.
-
-    Consumes the LLM token iterator, accumulates complete sentences and
-    synthesizes each sentence in a worker thread so audio starts flowing
-    before the LLM finishes (low perceived latency).
-    """
+class PiperTTS(_SentenceTTS):
+    """Piper TTS. Works with both the old (<=1.2) and the new (>=1.3) piper-tts API."""
 
     def __init__(self, model_path: str, config_path: str = "", sample_rate: int = 22050) -> None:
         self._model_path = model_path
         self._config_path = config_path
         self.sample_rate = sample_rate
-        self._voice: object | None = None
+        self._voice: Any = None
+        self._lock = threading.Lock()  # espeak phonemizer is not thread-safe
 
-    def _ensure_voice(self) -> object:
+    def _ensure_voice(self) -> Any:
         if self._voice is None:
-            from piper import PiperVoice  # type: ignore[import-not-found]
+            from piper import PiperVoice
 
-            self._voice = PiperVoice.load(self._model_path, config_path=self._config_path or None)
+            model = resolve_path(self._model_path)
+            if not model.is_file():
+                raise FileNotFoundError(
+                    f"Piper model not found: {self._model_path} (looked in cwd, repo root, voice/). "
+                    "Run `python setup/setup_env.py` or set PIPER_MODEL_PATH."
+                )
+            config = resolve_path(self._config_path) if self._config_path else None
+            log.info("loading piper voice %s", model)
+            self._voice = PiperVoice.load(str(model), config_path=str(config) if config else None)
+            # The model dictates the rate: announce the real one, not the configured guess.
+            self.sample_rate = int(self._voice.config.sample_rate)
         return self._voice
 
-    def _synth_sentence(self, sentence: str) -> bytes:
-        import io
-        import wave
+    async def warmup(self) -> None:
+        """Load the voice and synthesise a short phrase (ONNX init is slow on first use)."""
+        def _run() -> None:
+            self._ensure_voice()
+            self._synth("Pronto.")
 
+        await asyncio.to_thread(_run)
+
+    def _synth(self, sentence: str) -> bytes:
+        with self._lock:
+            return self._synth_locked(sentence)
+
+    def _synth_locked(self, sentence: str) -> bytes:
         voice = self._ensure_voice()
-        buf = io.BytesIO()
+        if hasattr(voice, "synthesize_wav"):  # piper-tts >= 1.3: iterator of AudioChunk
+            return b"".join(chunk.audio_int16_bytes for chunk in voice.synthesize(sentence))
+        buf = io.BytesIO()  # piper-tts <= 1.2: writes into a wave file
         with wave.open(buf, "wb") as wf:
-            voice.synthesize(sentence, wf)  # type: ignore[union-attr]
+            voice.synthesize(sentence, wf)
         buf.seek(0)
         with wave.open(buf, "rb") as wf:
-            raw = wf.readframes(wf.getnframes())
-            self.sample_rate = wf.getframerate()
-            return bytes(raw)
-
-    async def synthesize_stream(self, text_stream: AsyncIterator[str]) -> AsyncIterator[bytes]:
-        """Synthesize sentence-by-sentence as tokens arrive (cancellable)."""
-        buffer = ""
-        async for token in text_stream:
-            buffer += token
-            sentences = split_sentences(buffer)
-            if len(sentences) >= 2 or (buffer.strip() and buffer.strip()[-1] in ".!?;:\n"):
-                complete = " ".join(sentences[:-1]) if buffer.strip()[-1] not in ".!?;:\n" else " ".join(sentences)
-                remainder = "" if buffer.strip()[-1] in ".!?;:\n" else sentences[-1]
-                if complete:
-                    yield await asyncio.to_thread(self._synth_sentence, complete)
-                buffer = remainder
-        if buffer.strip():
-            yield await asyncio.to_thread(self._synth_sentence, buffer.strip())
+            return bytes(wf.readframes(wf.getnframes()))
 
     async def aclose(self) -> None:
-        """Release voice model."""
+        """Release the voice model."""
         self._voice = None
 
 
-def build_tts(backend: str, **kwargs: object) -> AbstractTTS:
-    """Factory: 'fake' or 'piper'."""
+def build_tts(backend: str, **kwargs: Any) -> AbstractTTS:
+    """Factory: ``fake`` or ``piper``."""
     if backend == "fake":
-        return FakeTTS(sample_rate=int(kwargs.get("sample_rate", 22050)))  # type: ignore[arg-type]
-    return PiperTTS(**kwargs)  # type: ignore[arg-type]
+        return FakeTTS(sample_rate=int(kwargs.get("sample_rate", 22050)))
+    allowed = {k: v for k, v in kwargs.items() if k in ("model_path", "config_path", "sample_rate")}
+    return PiperTTS(**allowed)
