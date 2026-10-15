@@ -188,6 +188,28 @@ class BackendClient:
                     raise BackendError(f"chat stream failed: {exc}") from exc
                 await asyncio.sleep(1.0 * attempt)
 
+    async def chat(
+        self,
+        message: str,
+        session_id: str = "voice_v2",
+        customer_id: str = "anon_voice",
+        client_type: str = "voice",
+    ) -> dict[str, Any]:
+        """Non-streaming chat (POST /api/chat), uguale a chat/app.py.
+
+        Usata dalla v2 on-demand: una risposta completa per una domanda completa.
+        """
+        payload = {
+            "message": scrub_pii(message),
+            "session_id": session_id,
+            "customer_id": customer_id,
+            "client_type": client_type,
+        }
+        result = await self._request("POST", "/api/chat", content=json.dumps(payload))
+        if not isinstance(result, dict) or "reply" not in result:
+            raise BackendError(f"BE /api/chat: risposta inattesa: {result!r:.200}")
+        return result
+
     async def aclose(self) -> None:
         """Close underlying HTTP connections."""
         await self._client.aclose()
