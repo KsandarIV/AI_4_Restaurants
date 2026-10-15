@@ -21,7 +21,7 @@ def _ensure_shared_env() -> bool:
         sys.path.insert(0, str(setup_dir))
         from env_check import ensure_environment
 
-        return ensure_environment()
+        return ensure_environment(role="voice")
     except Exception as exc:  # noqa: BLE001 - il voice non deve morire per il check env
         print(f"[voice] env check saltato: {exc}", flush=True)
         return True

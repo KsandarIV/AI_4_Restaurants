@@ -209,13 +209,13 @@ def ensure_repo_root() -> bool:
     return True
 
 
-def step_setup_env() -> bool:
-    """Riusa il setup condiviso: se il venv non e' pronto lo crea (interattivo)."""
+def step_setup_env(role: str) -> bool:
+    """Riusa il setup condiviso per QUESTO ruolo (base + ruolo, venv leggero)."""
     sys.path.insert(0, str(SETUP_DIR))
     from env_check import ensure_environment
 
-    log("controllo venv condiviso (setup/)...")
-    if ensure_environment():
+    log(f"controllo venv condiviso per ruolo={role} (setup/)...")
+    if ensure_environment(role=role):
         return True
     log("setup non completato: riavvia questo script dopo aver sistemato.")
     return False
@@ -374,17 +374,18 @@ def cmd_status(
     config: dict[str, object],
     be_override: str | None = None,
     identity: dict[str, str] | None = None,
+    silent: bool = False,
 ) -> int:
     """Ping HTTP alle 3 macchine e stampa la tabella di stato LAN.
 
     Se stessi via 127.0.0.1 (il componente locale deve rispondere in locale),
     il BE via IP ricordato/flag/config, gli altri via lan_config.json.
+    Con silent=True stampa solo l'esito finale (per i poll di attesa).
     """
     identity = identity or {}
     own = identity.get("role", "")
     hosts = effective_hosts(config, identity)
-    print("\n[lan] stato LAN:")
-    print(f"{'ruolo':<7} {'indirizzo':<28} {'stato':<5} dettaglio")
+    rows: list[tuple[str, str, str, str]] = []
     all_ok = True
     for role in ROLES:
         node = config[role]
@@ -398,7 +399,12 @@ def cmd_status(
         base = f"http://{host}:{int(node.get('port', 0))}"
         status, detail = check_one(role, base, str(node.get("health", "/health")))
         all_ok = all_ok and status == "OK"
-        print(f"{role:<7} {base:<28} {status:<5} {detail}")
+        rows.append((role, base, status, detail))
+    if not silent:
+        print("\n[lan] stato LAN:")
+        print(f"{'ruolo':<7} {'indirizzo':<28} {'stato':<5} dettaglio")
+        for role, base, status, detail in rows:
+            print(f"{role:<7} {base:<28} {status:<5} {detail}")
     print("[lan] TUTTO OK" if all_ok else "[lan] qualcosa non risponde: vedi dettaglio sopra")
     return 0 if all_ok else 1
 
@@ -431,6 +437,36 @@ def cmd_write_launcher(role: str) -> int:
     return 0
 
 
+def cmd_autostart(role: str, install: bool) -> int:
+    """Avvio automatico al login via Scheduled Task (una tantum, poi zero-touch).
+
+    Crea/rimuove l'attivita' "AI4R-<ruolo>" che lancia machine_setup --role X
+    30 s dopo il login. Da qui in poi basta ACCENDERE i PC: partono da soli
+    (chat/voice attendono comunque il BE grazie al cancello).
+    """
+    task = f"AI4R-{role}"
+    if not install:
+        proc = subprocess.run(
+            ["schtasks", "/delete", "/tn", task, "/f"],
+            capture_output=True, text=True, timeout=60,
+        )
+        log("avvio automatico rimosso." if proc.returncode == 0 else "nessuna attivita' da rimuovere.")
+        return 0
+    target = str(ROOT / "lan" / "machine_setup.py")
+    venv_py = str(ROOT / ".venv" / "Scripts" / "python.exe")
+    cmd = (f'schtasks /create /tn "{task}" /tr "\\"{venv_py}\\" \\"{target}\\" --role {role} --start" '
+           f"/sc onlogon /delay 0000:30 /f")
+    log(f"creo attivita' {task} (avvio al login +30s)...")
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, shell=True)
+    print((proc.stdout or "").strip()[-500:])
+    if proc.returncode != 0:
+        log("creazione fallita: apri 'Utilita' di pianificazione' come admin e riprova.")
+        print((proc.stderr or "").strip()[-500:])
+        return 1
+    log("avvio automatico installato: al prossimo login questa macchina parte da sola.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Setup/avvio di una macchina LAN (be|chat|voice).")
     parser.add_argument("--role", choices=list(ROLES), help="forza il ruolo (altrimenti auto)")
@@ -449,6 +485,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="mostra chi sono io e gli altri (mappa effettiva) ed esci")
     parser.add_argument("--pubblica-ip", action="store_true",
                         help="scrive il mio IP nel lan_config.json condiviso (solo IP statici!) ed esci")
+    parser.add_argument("--installa-avvio", action="store_true",
+                        help="avvio automatico al login (Scheduled Task): poi basta accendere il PC")
+    parser.add_argument("--rimuovi-avvio", action="store_true",
+                        help="rimuove l'avvio automatico al login ed esci")
     args = parser.parse_args(argv)
     global ASSUME_IP
 
@@ -465,10 +505,12 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_show(config, identity)
     if args.pubblica_ip:
         return 0 if publish_ip(config, identity) else 1
+    if args.installa_avvio or args.rimuovi_avvio:
+        return cmd_autostart(role, install=args.installa_avvio)
     if args.write_launcher:
         return cmd_write_launcher(role)
     if not args.start:
-        if not step_setup_env():
+        if not step_setup_env(role):
             return 1
         if not configure_env(role, config, args.be_host):
             return 1

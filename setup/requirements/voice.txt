@@ -1,0 +1,9 @@
+# VOICE: server WS + STT/TTS locali (solo macchina VOICE a runtime).
+# Rispecchia voice/pyproject.toml (editable install): se aggiungi qui, aggiungi anche li'.
+websockets>=12
+numpy>=1.26
+faster-whisper>=1.0
+piper-tts>=1.2
+onnxruntime>=1.18
+sounddevice>=0.4  # microfono/altoparlante per la v2 on-demand
+webrtcvad-wheels>=2.0.10  # OPZIONALE (fork con wheel; import sempre come "webrtcvad")

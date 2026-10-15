@@ -28,6 +28,8 @@ python lan\machine_setup.py --pubblica-ip          :: fissa il mio IP nel json c
 python lan\machine_setup.py --status               :: ping HTTP a be/chat/voice
 python lan\machine_setup.py --be-host 192.168.1.10 --configure-only
 python lan\machine_setup.py --write-launcher       :: crea AVVIA_<RUOLO>.bat
+python lan\machine_setup.py --installa-avvio       :: avvio automatico al login (una tantum, poi zero-touch)
+python lan\machine_setup.py --rimuovi-avvio        :: toglie l'avvio automatico
 python lan\machine_setup.py --role chat --no-wait --wait-timeout 60
 set LAN_ROLE=be  +  python lan\machine_setup.py    :: ruolo da variabile (lab/demo)
 ```

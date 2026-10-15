@@ -4,8 +4,8 @@
 
 Fa tutto in ordine, fermandosi con un messaggio chiaro al primo problema:
   [1] git pull --ff-only  (codice aggiornato; --no-git per saltare)
-  [2] setup/             (venv condiviso + modelli, interattivo se manca)
-  [3] lan/macchina.json  (identita': ruolo chiesto una volta sola + IP auto)
+  [2] identità            (ruolo una tantum + IP auto -> lan/macchina.json)
+  [3] setup/ per ruolo    (venv leggero: base + ruolo; --yes per non chiedere)
   [4] .env di macchina   (IP del BE chiesto una volta sola e ricordato)
   [5] firewall           (regola porta del ruolo, o istruzioni da admin)
   [6] attesa BE          (solo chat/voice; il BE deve partire per primo)
@@ -13,6 +13,7 @@ Fa tutto in ordine, fermandosi con un messaggio chiaro al primo problema:
 
 Altri usi:
   avvia.py --status            stato HTTP delle 3 macchine (non serve il ruolo)
+  avvia.py --attendi           PRESENTATORE: aspetta tutte le macchine (un solo PC)
   avvia.py --sono --role X     identifica e basta (scrive macchina.json)
   avvia.py --no-git --no-wait  salta aggiornamento codice e attesa BE
 """
@@ -63,6 +64,32 @@ def git_pull() -> bool:
     return True
 
 
+def cmd_attendi(config: dict[str, object], be_host: str | None, timeout_s: int) -> int:
+    """Per il presentatore: aspetta che TUTTE le macchine rispondano (un solo PC).
+
+    Poll silenzioso ogni 5 s + tabella finale. Exit 0 = si parte con la demo.
+    """
+    import time
+
+    identity = lan.load_identity()
+    deadline = time.monotonic() + timeout_s
+    attempt = 0
+    while time.monotonic() < deadline:
+        attempt += 1
+        if lan.cmd_status(config, be_host, identity, silent=True) == 0:
+            lan.cmd_status(config, be_host, identity, silent=False)
+            return 0
+        print(f"[entrypoint] attendo le macchine... ({attempt * 5}s, Ctrl+C per fermare)", flush=True)
+        try:
+            time.sleep(5)
+        except KeyboardInterrupt:
+            print("\n[entrypoint] attesa interrotta.", flush=True)
+            return 1
+    log(f"TIMEOUT {timeout_s}s: non tutte le macchine rispondono. Controlla alimentazione/rete.")
+    lan.cmd_status(config, be_host, identity, silent=False)
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Avvio completo di una macchina (git+setup+lan).")
     parser.add_argument("--role", choices=["be", "chat", "voice"], help="forza il ruolo")
@@ -72,23 +99,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--yes", "-y", action="store_true", help="risponde si' a tutto nel setup")
     parser.add_argument("--status", action="store_true", help="stato HTTP delle 3 macchine ed esci")
     parser.add_argument("--sono", action="store_true", help="identifica e basta (scrive macchina.json)")
+    parser.add_argument("--attendi", action="store_true",
+                        help="aspetta che TUTTE le macchine rispondano (per il presentatore: un solo PC)")
+    parser.add_argument("--attendi-timeout", type=int, default=600,
+                        help="secondi max di attesa globale (default 600)")
     args = parser.parse_args(argv)
 
     config = lan.load_config()
     if args.status:
         return lan.cmd_status(config, args.be_host, lan.load_identity())
+    if args.attendi:
+        return cmd_attendi(config, args.be_host, args.attendi_timeout)
 
     banner(f"Avvio macchina  |  root={ROOT}")
     if not args.no_git and not git_pull():
-        return 1
-
-    banner("Setup ambiente (venv + modelli)")
-    if args.yes:
-        import setup_env
-
-        setup_env.ASSUME_YES = True
-    if not ensure_environment():
-        log("setup non completato: sistema e rilancia entrypoint/avvia.py.")
         return 1
 
     banner("Identita' macchina (ruolo + IP)")
@@ -97,6 +121,15 @@ def main(argv: list[str] | None = None) -> int:
     identity = lan.ensure_identity(role)
     if args.sono:
         return lan.cmd_show(config, identity)
+
+    banner(f"Setup ambiente (venv + modelli, ruolo={role})")
+    if args.yes:
+        import setup_env
+
+        setup_env.ASSUME_YES = True
+    if not ensure_environment(role=role):
+        log("setup non completato: sistema e rilancia entrypoint/avvia.py.")
+        return 1
 
     banner("Configurazione rete (.env + firewall)")
     if not lan.configure_env(role, config, args.be_host):

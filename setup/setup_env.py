@@ -27,7 +27,29 @@ import urllib.request
 from pathlib import Path
 
 SETUP_DIR = Path(__file__).resolve().parent
-REQ_FILE = SETUP_DIR / "requirements.txt"
+REQ_DIR = SETUP_DIR / "requirements"  # base/be/chat/voice/dev .txt (scomposti per ruolo)
+
+
+def plan_files(role: str, with_dev: bool) -> list[Path]:
+    """File requirements da installare: base + ruolo (+dev se richiesto).
+
+    role=all (sviluppo/test singolo) = tutti i ruoli. A runtime ogni macchina
+    installa solo base + il suo ruolo: venv leggeri e check mirati.
+    """
+    if role == "all":
+        wanted = ["base", "be", "chat", "voice"]
+    elif role in ("be", "chat", "voice"):
+        wanted = ["base", role]
+    else:
+        raise ValueError(f"ruolo non valido: {role}")
+    if with_dev:
+        wanted.append("dev")
+    return [REQ_DIR / f"{name}.txt" for name in wanted if (REQ_DIR / f"{name}.txt").is_file()]
+
+
+def files_state(files: list[Path]) -> dict[str, str]:
+    """Hash sha256 per ogni file del piano (per lo stato e il check veloce)."""
+    return {path.stem: file_hash(path) for path in files}
 
 
 def find_root() -> Path:
@@ -206,27 +228,31 @@ def _pkg_name(requirement: str) -> str:
     return head.strip().lower().replace("_", "-")
 
 
-def parse_requirements() -> list[str]:
-    """Righe utili di requirements.txt (senza commenti/vuoti)."""
+def parse_requirements(path: Path) -> list[str]:
+    """Righe utili di un file requirements (senza commenti/vuoti, anche inline)."""
+    import re
+
     reqs: list[str] = []
-    for line in REQ_FILE.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = re.split(r"\s+#", line.strip(), maxsplit=1)[0].strip()
         if line and not line.startswith("#"):
             reqs.append(line)
     return reqs
 
 
-def step_requirements(python: str) -> tuple[bool, list[str]]:
-    """Installa pacchetto per pacchetto con output live.
+def step_requirements(python: str, files: list[Path]) -> tuple[bool, list[str]]:
+    """Installa pacchetto per pacchetto con output live, dai file del piano.
 
     Ritorna (core_ok, optional_failed): un pacchetto in OPTIONAL_PKGS puo'
     fallire (es. webrtcvad senza MSVC) senza bloccare il setup.
     """
-    if not REQ_FILE.exists():
-        log(f"ERRORE: {REQ_FILE} non trovato.")
-        return False, []
-    reqs = parse_requirements()
-    log(f"{len(reqs)} pacchetti da {REQ_FILE.name} con {python}")
+    reqs: list[tuple[str, str]] = []  # (file, riga)
+    for path in files:
+        if not path.is_file():
+            log(f"ERRORE: {path} non trovato.")
+            return False, []
+        reqs.extend((path.stem, line) for line in parse_requirements(path))
+    log(f"{len(reqs)} pacchetti da {[p.name for p in files]} con {python}")
     if not ask("procedo con l'installazione (output live pacchetto per pacchetto)?"):
         return True, []
     log("upgrade pip...")
@@ -234,10 +260,10 @@ def step_requirements(python: str) -> tuple[bool, list[str]]:
         log("AVVISO: upgrade pip fallito, continuo comunque.")
     optional_failed: list[str] = []
     core_failed: list[str] = []
-    for i, req in enumerate(reqs, 1):
+    for i, (owner, req) in enumerate(reqs, 1):
         name = _pkg_name(req)
         tag = "OPZIONALE" if name in OPTIONAL_PKGS else "richiesto"
-        print(f"\n[setup] pacchetto {i}/{len(reqs)}: {req}  ({tag})", flush=True)
+        print(f"\n[setup] pacchetto {i}/{len(reqs)} [{owner}]: {req}  ({tag})", flush=True)
         code = run_live([python, "-m", "pip", "install", req], timeout=1200)
         if code == 0:
             print(f"[setup] ok: {name}", flush=True)
@@ -266,7 +292,10 @@ def step_requirements(python: str) -> tuple[bool, list[str]]:
                 [python, "-m", "pip", "install", "-e", str(proj.parent)], timeout=600)
             if code != 0:
                 log(f"AVVISO: editable install ./{pkg} fallita (non fatale).")
-    return step_spacy_model(python), optional_failed
+    spacy_ok = True
+    if any(path.stem == "chat" for path in files):
+        spacy_ok = step_spacy_model(python)
+    return spacy_ok, optional_failed
 
 
 SPACY_MODEL = "it_core_news_md"
@@ -334,11 +363,17 @@ def step_piper() -> bool:
     return True
 
 
-def write_state(python: str, optional_failed: list[str] | None = None) -> None:
+def write_state(
+    python: str,
+    optional_failed: list[str] | None = None,
+    role: str = "all",
+    files: list[Path] | None = None,
+) -> None:
     state = {
         "python": sys.version.split()[0],
         "venv_python": python,
-        "requirements_sha256": file_hash(REQ_FILE) if REQ_FILE.exists() else "",
+        "role": role,
+        "files": files_state(files or []),
         "ollama_model": OLLAMA_MODEL,
         "optional_failed": optional_failed or [],
     }
@@ -356,12 +391,25 @@ def read_state() -> dict[str, object]:
         return {}
 
 
-def is_setup() -> bool:
-    """Check veloce e non interattivo: True se venv + marker coerenti."""
-    if not venv_python().exists() or not REQ_FILE.exists():
+def is_setup(role: str | None = None) -> bool:
+    """Check veloce e non interattivo: True se venv + hash dei file del ruolo coerenti.
+
+    role=None = ruolo salvato nello stato (o "all"). Una pipeline passa il suo
+    ruolo e verifica solo base + ruolo: a runtime ogni macchina ha il venv leggero.
+    """
+    if not venv_python().exists():
         return False
     state = read_state()
-    return bool(state) and state.get("requirements_sha256") == file_hash(REQ_FILE)
+    saved = state.get("files")
+    if not state or not isinstance(saved, dict):
+        return False  # stato vecchio formato (requirements.txt unico): reinstallare
+    want_role = role or str(state.get("role", "all"))
+    with_dev = "dev" in saved
+    try:
+        files = plan_files(want_role, with_dev)
+    except ValueError:
+        return False
+    return all(saved.get(path.stem) == file_hash(path) for path in files)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -375,11 +423,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-ollama", action="store_true")
     parser.add_argument("--skip-piper", action="store_true")
     parser.add_argument("--skip-requirements", action="store_true")
+    parser.add_argument("--role", choices=["be", "chat", "voice", "all"], default="all",
+                        help="installa base + ruolo (default all = tutto, per sviluppo/test)")
+    parser.add_argument("--with-dev", action="store_true",
+                        help="aggiungi i pacchetti di test anche con ruolo singolo")
     args = parser.parse_args(argv)
     ASSUME_YES = args.yes
+    with_dev = args.with_dev or args.role == "all"
+    files = plan_files(args.role, with_dev)
 
     if args.check_only:
-        ok = is_setup()
+        ok = is_setup(args.role if args.role != "all" else None)
         if ok:
             missing = read_state().get("optional_failed", [])
             log("ambiente OK" + (f" (opzionali saltati: {missing})" if missing else ""))
@@ -412,11 +466,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     python = target_python()
     log(f"python di destinazione: {python}")
+    log(f"piano requirements [{args.role}]: {[p.name for p in files]}")
     ok = True
     optional_failed: list[str] = []
     if not args.skip_requirements:
         step("Installazione dipendenze (output live)", 3, total_steps)
-        req_ok, optional_failed = step_requirements(python)
+        req_ok, optional_failed = step_requirements(python, files)
         ok = req_ok and ok
     if not args.skip_ollama:
         step("Modello Ollama locale", 4, total_steps)
@@ -425,7 +480,7 @@ def main(argv: list[str] | None = None) -> int:
         step("Voce Piper locale (TTS)", 5, total_steps)
         ok = step_piper() and ok
     if ok:
-        write_state(python, optional_failed)
+        write_state(python, optional_failed, args.role, files)
         banner("SETUP COMPLETATO")
         log(f"attiva il venv: {VENV_DIR}\\Scripts\\activate")
         log(f"oppure lancia diretto: {venv_python()} -m voicebot")

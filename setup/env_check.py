@@ -21,13 +21,15 @@ if str(SETUP_DIR) not in sys.path:
 from setup_env import is_setup, log, main as setup_main  # noqa: E402
 
 
-def ensure_environment(interactive: bool | None = None) -> bool:
+def ensure_environment(interactive: bool | None = None, role: str | None = None) -> bool:
     """Ritorna True se l'ambiente e' pronto, altrimenti lancia il setup.
 
     Args:
         interactive: None = chiede solo se stdin e' un terminale; True/False forza.
+        role: be|chat|voice = verifica/installa solo base + ruolo (venv leggero);
+              None = ruolo salvato o tutto.
     """
-    if is_setup():
+    if is_setup(role):
         return True
     if os.environ.get("VOICE_SETUP_SKIP") == "1":
         log("check saltato via VOICE_SETUP_SKIP=1 (l'ambiente potrebbe essere incompleto).")
@@ -36,7 +38,7 @@ def ensure_environment(interactive: bool | None = None) -> bool:
         interactive = sys.stdin.isatty()
     if interactive:
         log("ambiente non configurato: avvio setup interattivo...")
-        code = setup_main([])
+        code = setup_main(["--role", role] if role in ("be", "chat", "voice") else [])
         if code != 0:
             log("setup non completato: sistema gli errori e riavvia il componente.")
             return False
