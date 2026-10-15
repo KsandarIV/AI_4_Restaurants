@@ -337,25 +337,50 @@ def start_component(role: str, config: dict[str, object]) -> int:
     if argv[0].startswith(".venv"):
         argv[0] = str(ROOT / argv[0].replace("/", os.sep))
     cwd = ROOT / str(start.get("cwd", "."))
-    env = os.environ.copy()
-    for key, val in dict(start.get("env", {})).items():
-        env.setdefault(key, str(val).replace("192.168.1.10",
-                      read_env().get("BACKEND_BASE_URL", "http://192.168.1.10:8000").split("://")[1].split(":")[0]))
+
+    be_ip = read_env().get("BACKEND_BASE_URL", "http://192.168.1.10:8000").split("://")[1].split(":")[0]
+
+    def build_env(spec: dict[str, object]) -> dict[str, str]:
+        env = os.environ.copy()
+        for key, val in dict(spec.get("env", {})).items():
+            env.setdefault(key, str(val).replace("192.168.1.10", be_ip))
+        return env
+
+    def resolve_argv(raw: list[object]) -> list[str]:
+        out = [str(a) for a in raw]
+        if out[0].startswith(".venv"):
+            out[0] = str(ROOT / out[0].replace("/", os.sep))
+        return out
+
+    extras: list[subprocess.Popen] = []
+    for extra in list(start.get("extra", [])):
+        e_argv = resolve_argv(extra["argv"])
+        e_cwd = ROOT / str(extra.get("cwd", "."))
+        log(f"avvio anche: {extra.get('nome', e_argv[-1])}")
+        try:
+            extras.append(subprocess.Popen(e_argv, cwd=str(e_cwd), env=build_env(extra)))
+        except FileNotFoundError:
+            log(f"ATTENZIONE: {e_argv[0]} non trovato, salto questo processo.")
+
     log(f"avvio {role}: {' '.join(argv)}  (cwd={cwd}, Ctrl+C per fermare)")
+    proc = None
     try:
-        proc = subprocess.Popen(argv, cwd=str(cwd), env=env)
+        proc = subprocess.Popen(argv, cwd=str(cwd), env=build_env(start))
         return proc.wait()
     except KeyboardInterrupt:
         log("arresto richiesto, fermo il componente...")
-        try:
-            proc.terminate()
-            proc.wait(timeout=15)
-        except Exception:
-            proc.kill()
         return 0
     except FileNotFoundError:
         log(f"ERRORE: {argv[0]} non trovato: il venv non e' pronto, rilancia senza --start.")
         return 1
+    finally:
+        for p in ([proc] if proc else []) + extras:
+            if p.poll() is None:
+                try:
+                    p.terminate()
+                    p.wait(timeout=15)
+                except Exception:
+                    p.kill()
 
 
 def check_one(name: str, base: str, path: str, timeout: int = 5) -> tuple[str, str]:

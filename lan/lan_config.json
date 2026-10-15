@@ -23,7 +23,22 @@
       "cwd": ".",
       "argv": [".venv/Scripts/python.exe", "-m", "streamlit", "run", "chat/app.py",
                "--server.address", "0.0.0.0", "--server.port", "8501"],
-      "env": { "BE_URL": "http://192.168.1.10:8000" }
+      "env": { "BE_URL": "http://192.168.1.10:8000" },
+      "extra": [
+        {
+          "nome": "api chat per il sito (:8002)",
+          "cwd": "chat",
+          "argv": [".venv/Scripts/python.exe", "-m", "uvicorn", "api:app",
+                   "--host", "0.0.0.0", "--port", "8002"],
+          "env": { "BE_URL": "http://192.168.1.10:8000" }
+        },
+        {
+          "nome": "sito frontend (:8080)",
+          "cwd": ".",
+          "argv": [".venv/Scripts/python.exe", "-m", "http.server", "8080",
+                   "--directory", "frontend"]
+        }
+      ]
     }
   },
   "voice": {
