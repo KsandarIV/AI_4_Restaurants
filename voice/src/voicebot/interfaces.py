@@ -7,7 +7,7 @@ can be swapped (real model, fake for tests, remote service) without touching it.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -78,6 +78,9 @@ class AbstractLLMOrchestrator(ABC):
     """
 
     history: list[ChatMessage]
+    # Set by the session: lets the conversation tell the UI about structured facts
+    # (customer registered, reservation created/updated/cancelled).
+    on_event: Callable[[dict[str, str]], Awaitable[None]] | None = None
 
     async def opening(self) -> str:
         """Text the bot says as soon as the call starts (empty = stay silent)."""

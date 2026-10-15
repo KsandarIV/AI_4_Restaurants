@@ -5,13 +5,62 @@ anonymisation, same BE endpoints, same booking confirmation (decided by the BE) 
 transport is speech. All models run **locally**; the BE (separate LAN machine with the LLM and
 SQLite) is reached over HTTP only.
 
+## Simple commands
+
+| I want to… | Command (from the repo root) |
+|---|---|
+| **Test locally** (stub BE + voice + browser, nothing else needed) | `voiceoice local`  (`--fake` = no speech models, page/flow only) |
+| **Run for real** on the VOICE machine, the three-machine flow | `python entrypointvvia.py`  (as always: pull, setup, firewall, waits for the BE, starts `python -m voicebot`) |
+| Same, but only this component (BE already up) | `voiceoice real` |
+| Find out why something does not work | `voiceoice doctor` |
+| Voice chat from this PC, no browser, no streaming (the safe mode) | `voiceoice v2`  (`--text` = type instead of speak) |
+| Live call from this PC, no browser | `voiceoice live ws://<voice-host>:8003/ws/voice` |
+| Run the tests | `voiceoice test` |
+
+`voiceoice` is `voiceoice.bat`; the same commands work as `python -m voicebot <command>`.
+In local mode the page shows a **"LOCAL TEST — stub BE"** banner and nothing you do touches the real data.
+
+## The site (same kind of site as the chat bot's)
+
+Open `http://localhost:8003/` (local mode prints the exact address). It has the restaurant look of
+`frontend/` (copied stylesheet): menu with filters, hours/address/phone from the BE, the voice
+assistant (orb, live transcript, "new conversation", "hang up") and **My reservations**:
+
+- every booking made, changed or cancelled by voice appears there with its **live status**
+  (`Confirmed` / `Cancelled`) read from the BE;
+- "Check" looks up any code of yours; "Refresh all" re-reads them. Lookups only work from the browser
+  where you registered (the anonymous `customer_id` is kept in `localStorage`) and the BE answers
+  404 for anybody else's code;
+- the page never talks to the BE directly: `/site/menu`, `/site/info`, `/site/reservation/{code}` go
+  through the voice server. Page language follows `VOICE_LANGUAGE` (it/en).
+
+The older diagnostic page is still at `/prova-vocale` (+ `/tech`, `/tech-codice`, `/tech-idea`, `/diag`).
+
+## The spoken final report
+
+After a booking, a change or a cancellation the voice bot **reads back what really happened** and asks
+for a last yes — built by code from `GET /api/reservations/{code}` (owner only), not by the LLM:
+
+> "Riepilogo finale per Mario Rossi: la sua prenotazione è confermata, per due persone, venerdì sedici
+> ottobre, alle venti e trenta, in terrazza, tavolo undici. Il codice è R E S, 9 A 8 B 2 C. È tutto corretto?"
+
+- **yes** (short, unqualified: "sì", "sì, tutto corretto") → "Perfetto per Mario Rossi, grazie! La aspettiamo…";
+  "sì, ma alle 21" is NOT a yes: it goes to the agent as a change request;
+- **no** → "Mi dica cosa vuole cambiare…" and the caller changes or cancels by voice;
+- a change says "Prenotazione aggiornata…", a cancellation "La prenotazione RES-… risulta cancellata";
+- the same state is never read twice; if the lookup fails the bot stays silent rather than say something wrong.
+
+The same facts reach the page as `registered` / `reservation` events (that is what fills "My reservations").
+
+## Modes
+
 Two modes share one conversation engine (`orchestrator.py`):
 
-| Mode | Command | What it is | Use it for |
-|---|---|---|---|
-| **v1 live** | `python -m voicebot` | Real-time, full-duplex: browser/mic → WebSocket → VAD → STT → BE (SSE) → TTS → speaker, with barge-in | The demo with interruptions |
-| **v2 on-demand** | `python -m voicebot.v2` | Press ENTER, speak, hear the answer. Same chat conversation, one question = one answer, no streaming, no echo problems | Any PC, noisy rooms, no browser; the safe fallback |
-| **live from any PC** | `python -m voicebot.live_client ws://host:8003/ws/voice` | Live call with the local mic/speaker (browsers refuse the mic on plain-HTTP LAN addresses), auto-reconnect | Live mode from another machine |
+| Mode | What it is | Use it for |
+|---|---|---|
+| **v1 live** | Real-time, full-duplex: browser/mic → WebSocket → VAD → STT → BE (SSE) → TTS → speaker, with barge-in | The demo with interruptions |
+| **v2 on-demand** | Press ENTER, speak, hear the answer. Same chat conversation, one question = one answer, no streaming, no echo problems | Any PC, noisy rooms, no browser; the safe fallback |
+| **live from any PC** | Live call with the local mic/speaker (browsers refuse the mic on plain-HTTP LAN addresses), auto-reconnect | Live mode from another machine |
 
 v2 can also ride on the running CHAT service (`CHAT_SERVICE_URL=http://<chat>:8002`): then the
 voice bot is just STT/TTS around `chat/api.py`, with the chat bot working invisibly underneath.
@@ -22,9 +71,13 @@ voice bot is just STT/TTS around `chat/api.py`, with the chat bot working invisi
 voice/
 ├── pyproject.toml           # packaging + pytest (pythonpath=src) + mypy strict + ruff
 ├── Dockerfile               # multi-stage image of the live server
+├── voice.bat                # one entry point: local | real | doctor | v2 | live | test
 ├── test.bat                 # tests with the shared .venv, one line
 ├── src/voicebot/
-│   ├── __main__.py          # `python -m voicebot`: uvicorn, graceful shutdown, JSON logs
+│   ├── __main__.py          # `python -m voicebot [local|real|doctor|v2|live]`, graceful shutdown, JSON logs
+│   ├── local.py             # `voicebot local`: stub BE + voice server + browser in one process
+│   ├── spoken.py            # numbers/dates/times as words for the final report
+│   ├── devtools/stub_be.py  # stub BE with the real contract (also used by tests/stub_be.py)
 │   ├── config.py            # Settings (env / shared .env), path resolution for models
 │   ├── interfaces.py        # AbstractVAD / AbstractSTT / AbstractLLMOrchestrator / AbstractTTS
 │   ├── vad.py               # EnergyVAD (default) + WebRtcVADWrapper, time-based, chunk-size independent
@@ -47,8 +100,9 @@ voice/
 │   └── pipeline/
 │       ├── session.py       # ★ core loop: 3 asyncio tasks + bounded queues + barge-in
 │       ├── server.py        # FastAPI: /health /ready /diag /ws/voice + test pages
-│       └── *.html           # /prova-vocale (test page), /tech*, English
-└── tests/                   # ~120 tests, no models and no network needed
+│       ├── site/            # the site: index.html, app.js, site.css (look copied from frontend/)
+│       └── *.html           # /prova-vocale (diagnostic page), /tech*
+└── tests/                   # 150+ tests, no models and no network needed
 ```
 
 ## The conversation (identical to the chat bot)
@@ -84,6 +138,7 @@ WS reader ─PCM→ audio_in_q ─→ [VAD] ─utterance→ segment_q ─→ [ST
 | Method | Path | Use |
 |---|---|---|
 | GET | `/api/health` (`/health`) | readiness, LLM model |
+| GET | `/api/reservations/{code}?customer_id=` | the final spoken report and the site's "My reservations" (owner only, 404 otherwise) |
 | POST | `/api/customers` | `{name, phone(E.164), consent}` → `{customer_id}` — the only call carrying personal data |
 | POST | `/api/chat` | v2: `{message, session_id, customer_id, client_type:"voice"}` → `{reply}` |
 | POST | `/api/chat/stream` | v1: same body, SSE `data: {"token": ".."}` … `data: [DONE]` |
@@ -99,7 +154,7 @@ with backoff.
 - Reconnection: a connection is stateless; clients reconnect with exponential backoff
   (the test page and `live_client` both do).
 
-## Run it locally (no BE machine needed)
+## Run it locally by hand (what `voice local` does)
 
 ```bat
 REM from the repo root, once

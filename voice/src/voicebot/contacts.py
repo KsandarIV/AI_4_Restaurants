@@ -121,6 +121,19 @@ def phone_for_speech(e164: str, language: str = "it") -> str:
     return prefix + sep.join(" ".join(g) for g in groups if g)
 
 
+def _valid_phone(digits: str) -> str | None:
+    """E.164 of ``digits`` (a national number, or one starting with the country code) or None."""
+    candidates = [("+" + digits, None), (digits, REGION)] if digits.startswith("39") and len(digits) >= 11 else [(digits, REGION)]
+    for number, region in candidates:
+        try:
+            parsed = phonenumbers.parse(number, region)
+        except phonenumbers.NumberParseException:
+            continue
+        if phonenumbers.is_valid_number(parsed):
+            return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+    return None
+
+
 @dataclass
 class Contacts:
     """What could be extracted from one utterance."""
@@ -181,7 +194,21 @@ _PROBLEM_KEYS = {
     "invalid_phone": "problem_invalid_phone",
     "multiple_phones": "problem_multiple_phones",
     "unclear_name": "problem_unclear_name",
+    "partial_phone": "problem_partial_phone",
 }
+
+
+_QUALIFIER = re.compile(r"\b(?:ma|però|pero|but|except|tranne)\b|\d", re.I)
+
+
+def is_plain_yes(text: str) -> bool:
+    """A short, unqualified yes ("sì", "sì grazie, tutto corretto"). "Sì ma alle 21" is NOT a yes."""
+    return bool(_YES.match(text)) and len(text.split()) <= 6 and not _QUALIFIER.search(text)
+
+
+def is_plain_no(text: str) -> bool:
+    """A short no ("no", "no grazie, sbagliato")."""
+    return bool(_NO.match(text)) and len(text.split()) <= 6
 
 
 class RegistrationDialog:
@@ -198,6 +225,7 @@ class RegistrationDialog:
         self.name: str | None = None
         self.phone: str | None = None
         self.attempts = 0
+        self._digits = ""  # digits of a phone number heard so far, across utterances
 
     def opening(self) -> str:
         """The first thing the bot says."""
@@ -213,9 +241,37 @@ class RegistrationDialog:
 
     # -- internals --
 
+    def _join_digit_fragments(self, text: str, contacts: Contacts) -> bool:
+        """Callers pause inside a number, so the VAD may cut it in two utterances ("333" ... "123 4567").
+
+        While no phone is known, digits heard so far are kept and joined with the next ones.
+        Returns True when a fragment was stored (that counts as progress).
+        """
+        if contacts.phone or self.phone:
+            self._digits = ""
+            return False
+        heard = re.sub(r"\D", "", normalize_spoken_numbers(text))
+        if not heard:
+            return False
+        combined = self._digits + heard
+        phone = _valid_phone(combined)
+        if phone:
+            contacts.phone, self._digits = phone, ""
+            contacts.problems = [p for p in contacts.problems if p != "invalid_phone"]
+            return False
+        contacts.problems = [p for p in contacts.problems if p != "invalid_phone"]
+        if len(combined) < 10:  # incomplete: remember it and ask for the rest
+            self._digits = combined
+            contacts.problems.append("partial_phone")
+            return True
+        self._digits = ""
+        contacts.problems.append("invalid_phone")
+        return False
+
     def _collect(self, text: str) -> tuple[str, str | None]:
         contacts = extract_contacts(text)
-        progress = self._update(contacts, text)
+        fragment = self._join_digit_fragments(text, contacts)
+        progress = self._update(contacts, text) or fragment
         if self.name and self.phone:
             self.phase = "confirming"
             return self._summary(), None
@@ -235,6 +291,7 @@ class RegistrationDialog:
             return self._summary(), None
         if _NO.match(text):
             self.name = self.phone = None
+            self._digits = ""
             self.phase = "collecting"
             return say(self.language, "restart") + " " + say(self.language, "contact_example"), None
         return say(self.language, "yes_or_no"), None
@@ -264,6 +321,8 @@ class RegistrationDialog:
         )
 
     def _ask_missing(self, problems: list[str]) -> str:
+        if "partial_phone" in problems:  # a number cut in the middle: ask for the rest, nothing else
+            return say(self.language, "problem_partial_phone", digits=" ".join(self._digits))
         lines = [say(self.language, _PROBLEM_KEYS[p]) for p in problems if p in _PROBLEM_KEYS]
         if self.name and not self.phone:
             lines.append(say(self.language, "only_phone_missing", name=self.name))

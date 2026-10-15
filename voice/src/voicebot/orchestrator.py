@@ -17,19 +17,24 @@ bookings, allergy answers and registration checks. The voice bot only adds ears 
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from collections.abc import AsyncIterator
 from enum import Enum
+from typing import Any
 
 from .anonymizer import Anonymizer
 from .backend import BackendClient, BackendError
-from .contacts import RegistrationDialog
+from .contacts import RegistrationDialog, is_plain_no, is_plain_yes
 from .interfaces import AbstractLLMOrchestrator, ChatMessage
 from .logging_json import get_logger
 from .messages import normalize_language, say
 from .prompts import build_system_prompt
+from .spoken import spoken_date, spoken_location, spoken_number, spoken_time
 
 log = get_logger("orchestrator")
+
+_BOOKING_CODE = re.compile(r"\bRES-[A-Z0-9]{4,10}\b")
 
 
 class Phase(str, Enum):
@@ -70,6 +75,8 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         self.dialog = RegistrationDialog(self._language)
         self.phase = Phase.REGISTRATION if self._require_registration else Phase.CHAT
         self.history = [ChatMessage(role="system", content=self._system)]
+        self._reported: dict[str, tuple[Any, ...]] = {}  # booking code -> details already read aloud
+        self._awaiting_final: str | None = None  # code waiting for the caller's last "yes"
 
     def reset(self) -> None:
         """Start a brand-new conversation: new session, new customer, empty placeholder map."""
@@ -106,6 +113,9 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         try:
             data = await self._backend.chat(anonymized, self.session_id, self.customer_id)
             text = self.anonymizer.restore(str(data["reply"]))
+            report = await self._final_report(text)
+            if report:
+                text = f"{text} {report}"
         except BackendError as exc:
             log.error("chat failed kind=%s status=%s", exc.kind, exc.status)
             text = self._error_text(exc)
@@ -135,6 +145,10 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
                 yield tail
             if not spoken:  # the BE answered with an empty stream
                 raise BackendError("empty reply", kind="format")
+            report = await self._final_report("".join(spoken))
+            if report:  # the closing summary, spoken right after the BE's own answer
+                spoken.append(f" {report}")
+                yield f" {report}"
         except BackendError as exc:
             log.error("stream failed kind=%s status=%s", exc.kind, exc.status)
             apology = self._error_text(exc)
@@ -165,7 +179,77 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
             self._remember("assistant", reply)
             return reply
         self._remember("user", text)
+        if self._awaiting_final is not None:  # the caller's answer to "is everything correct?"
+            self._awaiting_final = None
+            who = self._who()
+            if is_plain_yes(text):
+                reply = say(self._language, "final_ok", who=who)
+            elif is_plain_no(text):
+                reply = say(self._language, "final_no")
+            else:
+                return None  # a correction or a new request: the BE agent handles it
+            self._remember("assistant", reply)
+            return reply
         return None
+
+    def _who(self) -> str:
+        """' for Mario Rossi' - spoken locally, the name never goes to the BE."""
+        name = self.dialog.name if self.registered else None
+        return say(self._language, "who", name=name) if name else ""
+
+    async def _emit_event(self, payload: dict[str, str]) -> None:
+        if self.on_event is not None:
+            try:
+                await self.on_event(payload)
+            except Exception as exc:  # noqa: BLE001 - the UI must never break the call
+                log.warning("event hook failed: %r", exc)
+
+    async def _final_report(self, reply: str) -> str:
+        """Read back what really happened, from the BE's data, when the reply mentions a booking.
+
+        Not the LLM's words: the booking is fetched with ``GET /api/reservations/{code}`` (owner
+        only) and described by code, then the caller is asked for a last yes. Returns "" when
+        there is nothing new to report or the lookup fails (silence is better than a wrong report).
+        """
+        if not self.registered:
+            return ""
+        codes = _BOOKING_CODE.findall(reply.upper())
+        if not codes:
+            return ""
+        code = codes[-1]
+        try:
+            res = await self._backend.get_reservation(code, self.customer_id)
+        except BackendError as exc:
+            log.info("no report for %s: kind=%s status=%s", code, exc.kind, exc.status)
+            return ""
+        status = str(res.get("status") or "").upper()
+        details = (status, res.get("date"), res.get("time"), res.get("guests_count"),
+                   res.get("table_number"))
+        if self._reported.get(code) == details:
+            return ""  # same state already read aloud (e.g. the caller asked for the code again)
+        known = code in self._reported
+        self._reported[code] = details
+        await self._emit_event({
+            "event": "reservation", "code": code, "status": status,
+            "date": str(res.get("date") or ""), "time": str(res.get("time") or ""),
+            "guests": str(res.get("guests_count") or ""), "customer_id": self.customer_id,
+            "table": str(res.get("table_number") or ""), "location": str(res.get("table_location") or ""),
+        })
+        lang, who = self._language, self._who()
+        if status == "CANCELLED":
+            self._awaiting_final = None
+            return say(lang, "report_cancelled", code=code, who=who)
+        guests = int(res.get("guests_count") or 0)
+        party = say(lang, "party_one") if guests == 1 else say(lang, "party_many", n=spoken_number(guests, lang))
+        where = spoken_location(res.get("table_location"), lang)
+        table = say(lang, "table_part", n=spoken_number(int(res["table_number"]), lang)) if res.get("table_number") else ""
+        self._awaiting_final = code
+        return say(
+            lang, "report_updated" if known else "report_confirmed",
+            who=who, party=party, date=spoken_date(str(res.get("date") or ""), lang),
+            time=spoken_time(str(res.get("time") or ""), lang), where=f" {where}" if where else "",
+            table=table, code=code,
+        )
 
     async def _registration_step(self, text: str) -> str:
         """One step of the registration dialogue (mirrors ``gestisci_registrazione``)."""
@@ -177,6 +261,7 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
                 )
                 self.phase = Phase.CHAT
                 log.info("customer registered id=%s", self.customer_id)
+                await self._emit_event({"event": "registered", "customer_id": self.customer_id})
                 return say(self._language, "registered", name=self.dialog.name or "")
             except BackendError as exc:
                 self.dialog.retry_confirmation()  # data is kept: "yes" again retries

@@ -103,3 +103,29 @@ def test_failed_registration_keeps_data_for_retry() -> None:
     assert dialog.handle("sì")[1] == "register"
     dialog.retry_confirmation()
     assert dialog.handle("sì")[1] == "register"
+
+
+def test_a_number_cut_in_two_utterances_is_joined() -> None:
+    """The VAD ends an utterance at a pause: "333" ... "123 4567" must still become one number."""
+    dialog = RegistrationDialog("it")
+    reply, action = dialog.handle("Mario Rossi 333")
+    assert action is None and "Ho sentito 3 3 3" in reply and dialog.phone is None
+    reply, action = dialog.handle("1 2 3 4 5 6 7")
+    assert action is None and "3 3 3, 1 2 3, 4 5 6 7" in reply and "È corretto" in reply
+    assert dialog.handle("sì")[1] == "register" and dialog.phone == "+393331234567"
+
+
+def test_three_fragments_and_a_restart_forget_old_digits() -> None:
+    dialog = RegistrationDialog("en")
+    dialog.handle("Mario Rossi")
+    assert "I heard 3 3 3" in dialog.handle("333")[0]
+    assert "I heard 3 3 3, 1 2" not in dialog.handle("12")[0] and dialog._digits == "33312"
+    assert dialog.handle("34567")[0].startswith("I understood")
+    dialog.handle("no")
+    assert dialog._digits == "" and dialog.name is None
+
+
+def test_an_impossible_long_number_does_not_pile_up() -> None:
+    dialog = RegistrationDialog("it")
+    reply, _ = dialog.handle("Mario Rossi, 1111111111111")
+    assert "non sembra valido" in reply and dialog._digits == ""

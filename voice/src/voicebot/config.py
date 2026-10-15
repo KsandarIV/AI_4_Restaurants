@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # --- Server ---
+    mode: Literal["real", "local"] = Field(default="real")  # "local" = stub BE (voicebot local)
     voice_host: str = Field(default="0.0.0.0")
     voice_port: int = Field(default=8003)
     ws_idle_timeout_s: float = Field(default=60.0)
@@ -103,7 +104,7 @@ class Settings(BaseSettings):
     stt_compute_type: str = Field(default="int8")
     stt_language: str = Field(default="")  # empty = follow VOICE_LANGUAGE
     stt_timeout_s: float = Field(default=30.0)
-    # Context that biases Whisper towards digits and booking vocabulary. Empty = built-in per language.
+    # Optional context text for Whisper (vocabulary hints). Empty = none: prompts can be echoed back.
     stt_initial_prompt: str = Field(default="")
 
     # --- TTS ---
@@ -125,12 +126,9 @@ class Settings(BaseSettings):
 
     @property
     def effective_stt_prompt(self) -> str:
-        """Whisper initial prompt: explicit STT_INITIAL_PROMPT, else a built-in one."""
-        if self.stt_initial_prompt:
-            return self.stt_initial_prompt
-        if self.effective_stt_language.startswith("en"):
-            return "Table booking at a restaurant. First and last name, phone number 333 123 4567."
-        return "Prenotazione di un tavolo al ristorante. Nome e cognome, numero di telefono 333 123 4567."
+        """Whisper initial prompt: only what STT_INITIAL_PROMPT says. Off by default - measured:
+        a prompt with a sample name/number made Whisper-small answer with the prompt itself."""
+        return self.stt_initial_prompt
 
     @property
     def effective_stt_language(self) -> str:

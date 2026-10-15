@@ -38,6 +38,7 @@ _IT: dict[str, str] = {
     "problem_invalid_phone": "Il numero di telefono non sembra valido. Può ripeterlo cifra per cifra?",
     "problem_multiple_phones": "Ho sentito più numeri di telefono: quale devo usare per la prenotazione?",
     "problem_unclear_name": "Non sono sicuro di aver capito il nome: può dirmi nome e cognome?",
+    "problem_partial_phone": "Ho sentito {digits}. Continui pure con le altre cifre del telefono.",
     "only_phone_missing": "Grazie {name}! Mi manca solo il numero di telefono.",
     "only_name_missing": "Ho il numero {phone}. Mi manca solo il nome.",
     "summary": "Ho capito: {name}, telefono {phone}. È corretto? Risponda sì o no.",
@@ -62,6 +63,25 @@ _IT: dict[str, str] = {
     "didnt_hear": "Non ho sentito bene, può ripetere?",
     "digit_sep": ", ",
     "plus": "più",
+    # --- final spoken report after a booking (built from the BE's data, not by the LLM) ---
+    "party_one": "per una persona",
+    "party_many": "per {n} persone",
+    "table_part": ", tavolo {n}",
+    "who": " per {name}",
+    "report_confirmed": (
+        "Riepilogo finale{who}: la sua prenotazione è confermata, {party}, {date}, {time}{where}{table}. "
+        "Il codice è {code}. È tutto corretto?"
+    ),
+    "report_updated": (
+        "Prenotazione aggiornata{who}: {party}, {date}, {time}{where}{table}. "
+        "Il codice resta {code}. È tutto corretto?"
+    ),
+    "report_cancelled": "La prenotazione {code}{who} risulta cancellata. Posso aiutarla con altro?",
+    "final_ok": "Perfetto{who}, grazie! La aspettiamo alla Trattoria Bella Napoli. Buona giornata!",
+    "final_no": (
+        "Va bene. Mi dica cosa vuole cambiare: posso modificare data, orario e numero di persone, "
+        "oppure cancellare la prenotazione."
+    ),
 }
 
 _EN: dict[str, str] = {
@@ -86,6 +106,7 @@ _EN: dict[str, str] = {
     "problem_invalid_phone": "That phone number does not look valid. Can you repeat it digit by digit?",
     "problem_multiple_phones": "I heard more than one phone number: which one should I use for the booking?",
     "problem_unclear_name": "I am not sure I got the name: can you tell me your first and last name?",
+    "problem_partial_phone": "I heard {digits}. Please go on with the other digits of the phone number.",
     "only_phone_missing": "Thank you {name}! I only need the phone number now.",
     "only_name_missing": "I have the number {phone}. I only need the name now.",
     "summary": "I understood: {name}, phone {phone}. Is that correct? Please answer yes or no.",
@@ -110,6 +131,25 @@ _EN: dict[str, str] = {
     "didnt_hear": "I did not hear that well, could you repeat?",
     "digit_sep": ", ",
     "plus": "plus",
+    # --- final spoken report after a booking (built from the BE's data, not by the LLM) ---
+    "party_one": "for one person",
+    "party_many": "for {n} people",
+    "table_part": ", table {n}",
+    "who": " for {name}",
+    "report_confirmed": (
+        "Final summary{who}: your booking is confirmed, {party}, {date}, {time}{where}{table}. "
+        "The code is {code}. Is everything correct?"
+    ),
+    "report_updated": (
+        "Booking updated{who}: {party}, {date}, {time}{where}{table}. "
+        "The code stays {code}. Is everything correct?"
+    ),
+    "report_cancelled": "Booking {code}{who} is now cancelled. Can I help with anything else?",
+    "final_ok": "Perfect{who}, thank you! We look forward to seeing you at Trattoria Bella Napoli. Have a nice day!",
+    "final_no": (
+        "All right. Tell me what you want to change: I can change the date, time and number of people, "
+        "or cancel the booking."
+    ),
 }
 
 _CATALOG: dict[str, dict[str, str]] = {"it": _IT, "en": _EN}

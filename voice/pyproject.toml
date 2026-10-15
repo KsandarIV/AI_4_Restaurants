@@ -53,6 +53,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+voicebot = ["pipeline/*.html", "pipeline/site/*"]
+
 [[tool.mypy.overrides]]
 module = ["faster_whisper.*", "piper.*", "webrtcvad.*", "sounddevice.*", "spacy.*", "winsound", "env_check"]
 ignore_missing_imports = true

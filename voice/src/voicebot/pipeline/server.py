@@ -17,13 +17,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from ..backend import BackendClient
 from ..config import Settings, get_settings
@@ -200,9 +203,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ---------------- pages ----------------
 
-    @app.get("/", include_in_schema=False)
-    async def root() -> RedirectResponse:
-        return RedirectResponse(url="/prova-vocale")
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    async def site() -> str:
+        """The restaurant site with the voice assistant and "My reservations"."""
+        return (_PAGES / "site" / "index.html").read_text(encoding="utf-8")
+
+    app.mount("/site-assets", StaticFiles(directory=_PAGES / "site"), name="site-assets")
+
+    # The site never talks to the BE directly: menu, info and reservation lookups go through here.
+    async def _be_get(path: str, params: dict[str, str] | None = None) -> Response:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=3.0)) as client:
+                resp = await client.get(settings.backend_base_url.rstrip("/") + path, params=params)
+        except httpx.HTTPError:
+            return JSONResponse({"detail": "BE not reachable"}, status_code=502)
+        return Response(resp.content, status_code=resp.status_code, media_type="application/json")
+
+    @app.get("/site/config", include_in_schema=False)
+    async def site_config() -> dict[str, Any]:
+        return {"language": settings.voice_language, "mode": settings.mode,
+                "require_registration": settings.require_registration}
+
+    @app.get("/site/menu", include_in_schema=False)
+    async def site_menu() -> Response:
+        return await _be_get("/api/menu")
+
+    @app.get("/site/info", include_in_schema=False)
+    async def site_info() -> Response:
+        return await _be_get("/api/info")
+
+    @app.get("/site/reservation/{code}", include_in_schema=False)
+    async def site_reservation(code: str, customer_id: str = "") -> Response:
+        """One reservation of the caller (the BE answers 404 for anybody else's: codes are not guessable)."""
+        if not re.fullmatch(r"[A-Za-z0-9-]{4,20}", code) or not customer_id:
+            return JSONResponse({"detail": "invalid request"}, status_code=400)
+        return await _be_get(f"/api/reservations/{code.upper()}", {"customer_id": customer_id})
 
     @app.get("/prova-vocale", response_class=HTMLResponse, include_in_schema=False)
     async def voice_page() -> str:

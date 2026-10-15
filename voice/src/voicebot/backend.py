@@ -152,6 +152,15 @@ class BackendClient:
         """``GET /api/info`` (restaurant address, phone, hours)."""
         return await self._request("GET", "/api/info")
 
+    async def get_reservation(self, booking_code: str, customer_id: str) -> dict[str, Any]:
+        """``GET /api/reservations/{code}?customer_id=`` - only the owner can read it (404 otherwise)."""
+        data = await self._request(
+            "GET", f"/api/reservations/{booking_code}", params={"customer_id": customer_id}
+        )
+        if not isinstance(data, dict):
+            raise BackendError("BE /api/reservations: unexpected response", kind="format")
+        return data
+
     async def register_customer(self, name: str, phone: str) -> str:
         """Register name + phone (E.164) and return the anonymous ``customer_id``.
 

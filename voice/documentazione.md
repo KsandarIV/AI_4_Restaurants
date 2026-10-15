@@ -74,6 +74,22 @@ WS reader ─PCM→ audio_in_q ─→ VAD ─→ segment_q ─→ STT ─→ tex
 - **Failures are contained:** a crashing STT/LLM turn emits an `error` event and the call continues.
 - **Shutdown:** poison pills, cancellation, bounded joins; shared models are not closed per call.
 
+## 4b. Final spoken report and the site
+
+- **Report.** When a BE reply mentions a booking code (`RES-…`) and the caller is registered, the orchestrator
+  fetches `GET /api/reservations/{code}?customer_id=` (the BE answers 404 for anybody else's code) and the
+  voice bot reads back the real data — date, time, party size, room, table, code, status — then asks for a
+  last yes (`is_plain_yes`: short and unqualified; "yes, but at 9" goes to the agent). Cancellation and
+  modification are reported too; the same state is never read twice; a failed lookup means silence, never a
+  wrong report. Numbers, dates and times are written as words (`spoken.py`) because the TTS reads "20:30" badly.
+- **Site.** `http://<voice>:8003/` is the same kind of site as the chat bot's (look copied from `frontend/`):
+  menu, hours, the voice assistant and **My reservations** (live status, lookup by code). Menu/info/lookups go
+  through `/site/*` of the voice server; the lookup works only for the registered customer of that browser.
+- **Events to the page:** `registered` (anonymous customer id) and `reservation` (code, date, time, guests,
+  status, table, room) next to `transcript`, `reply`, `barge_in`…
+- **Commands:** `voiceoice local` (stub BE, nothing else needed) · `python entrypointvvia.py` (real,
+  three machines) · `voiceoice real|doctor|v2|live|test`; all also as `python -m voicebot <command>`.
+
 ## 5. Modes
 
 - **v1 live** — `python -m voicebot`, page `/prova-vocale`, WebSocket `/ws/voice`.
@@ -105,7 +121,7 @@ BE switch) · `CHAT_SERVICE_URL` (v2 via chat) · `STT_BACKEND`/`TTS_BACKEND` (`
 
 ## 8. Tests — two modes
 
-- **Offline** (`pytest tests`, ~120 tests, no models, no network): `tests/stub_be.py` is an HTTP stub of the
+- **Offline** (`pytest tests`, 150+ tests, no models, no network): `tests/stub_be.py` is an HTTP stub of the
   real BE contract (registration validation, registration rule, yes/no confirmation, failures on demand);
   fake STT/TTS; the real client, orchestrator, pipeline, server and live client run over real sockets.
 - **LAN**: replace the stub by the real BE changing only `BACKEND_BASE_URL`.

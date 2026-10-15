@@ -42,6 +42,10 @@ Identico alla chat: il bot parla per primo e chiede nome+telefono (fase di regis
 `POST /api/customers`, mai l'LLM), poi ogni frase passa da anonimizza → BE → ripristina.
 Dal PC con microfono senza browser: `python -m voicebot.live_client ws://VOICE:8003/ws/voice`.
 Se qualcosa non va: `python -m voicebot.doctor` (o `http://VOICE:8003/diag`).
+Sito: `http://VOICE:8003/` (stesso aspetto del sito chat: menu, orari, assistente vocale e
+**Le mie prenotazioni** con lo stato aggiornato dal BE). A fine prenotazione/modifica/cancellazione il
+bot rilegge a voce il riepilogo (dati veri dal BE, `GET /api/reservations/{codice}`) e chiede un ultimo sì.
+Comandi: test locale con BE finto `voice\voice local`; flusso reale a tre macchine `python entrypoint\avvia.py`.
 
 ## Flusso voce v2 (on-demand, come la chat)
 

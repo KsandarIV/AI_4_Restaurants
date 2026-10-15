@@ -147,9 +147,8 @@ async def test_whisper_gets_the_booking_prompt_and_drops_hallucinations() -> Non
     assert await stt.transcribe(bytes(20), 16000) == ""  # < 100 ms is never sent to the model
 
 
-def test_whisper_prompt_follows_the_language() -> None:
-    assert Settings(voice_language="it").effective_stt_prompt.startswith("Prenotazione")
-    assert Settings(voice_language="en").effective_stt_prompt.startswith("Table booking")
+def test_whisper_prompt_is_off_unless_configured() -> None:
+    assert Settings().effective_stt_prompt == ""
     assert Settings(stt_initial_prompt="custom").effective_stt_prompt == "custom"
     assert Settings().stt_model == "small"
 

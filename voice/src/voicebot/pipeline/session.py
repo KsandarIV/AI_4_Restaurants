@@ -81,6 +81,7 @@ class VoiceSession:
         self._barge_pending = False  # speech started while the bot talked, not yet long enough
         self._playback_until = 0.0  # loop time when the client finishes playing what we sent
         self._closed = False
+        self.llm.on_event = self._emit
 
     # ---------------- public API ----------------
 
