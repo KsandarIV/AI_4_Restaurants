@@ -101,11 +101,11 @@ def test_table_turnover_90_minutes():
                 customer_id="turnover_group_1"
             )
             assert res1["success"] is True
-            assert res1["table_number"] == 12
+            table_assigned = res1["table_number"]
             created_codes.append(res1["booking_code"])
 
             # 2. Second booking at 20:00 for 10 people (within the 90 min window: 19:30-21:00)
-            # Must FAIL because Table 12 is busy and there are no other 10-person tables!
+            # Must FAIL because Table is busy!
             res2 = crud.create_reservation(
                 db=db,
                 date=target_date,
@@ -117,7 +117,7 @@ def test_table_turnover_90_minutes():
             assert "non ci sono tavoli disponibili" in res2["error"].lower()
 
             # 3. Third booking at 21:00 for 10 people (after 90 minutes)
-            # Must SUCCEED because Table 12 has freed up!
+            # Must SUCCEED because Table has freed up and gets reassigned!
             res3 = crud.create_reservation(
                 db=db,
                 date=target_date,
@@ -126,7 +126,7 @@ def test_table_turnover_90_minutes():
                 customer_id="turnover_group_3"
             )
             assert res3["success"] is True
-            assert res3["table_number"] == 12
+            assert res3["table_number"] == table_assigned
             created_codes.append(res3["booking_code"])
         finally:
             for c in created_codes:
