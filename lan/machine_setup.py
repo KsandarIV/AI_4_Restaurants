@@ -275,23 +275,28 @@ def configure_env(role: str, config: dict[str, object], be_host: str | None) -> 
 
 
 def firewall_hint(role: str, config: dict[str, object]) -> None:
-    """Stampa (e prova) le regole firewall Windows per la porta del ruolo."""
+    """Stampa (e prova) le regole firewall Windows per TUTTE le porte del ruolo."""
     node = config[role]
     assert isinstance(node, dict)
-    port = int(node.get("port", 0))
-    rule = f"AI4R-{role}-{port}"
-    cmd = (f'netsh advfirewall firewall add rule name="{rule}" '
-           f'dir=in action=allow protocol=TCP localport={port}')
-    print(f"[lan] firewall: serve la porta {port}/TCP in ingresso. Comando da admin:")
-    print(f"      {cmd}")
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, shell=True)
-        if proc.returncode == 0:
-            log("regola firewall applicata.")
-        else:
-            log("regola NON applicata (serve prompt amministratore): eseguila a mano.")
-    except Exception as exc:
-        log(f"regola NON applicata ({exc}): eseguila a mano da admin.")
+    ports = [int(node.get("port", 0))]
+    for svc in dict(node.get("start", {})).get("extra", []):
+        assert isinstance(svc, dict)
+        if svc.get("port"):
+            ports.append(int(svc["port"]))
+    for port in [p for p in ports if p > 0]:
+        rule = f"AI4R-{role}-{port}"
+        cmd = (f'netsh advfirewall firewall add rule name="{rule}" '
+               f'dir=in action=allow protocol=TCP localport={port}')
+        print(f"[lan] firewall: porta {port}/TCP in ingresso. Comando da admin:")
+        print(f"      {cmd}")
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, shell=True)
+            if proc.returncode == 0:
+                log(f"regola {rule} applicata.")
+            else:
+                log(f"regola {rule} NON applicata (serve prompt amministratore): eseguila a mano.")
+        except Exception as exc:
+            log(f"regola {rule} NON applicata ({exc}): eseguila a mano da admin.")
 
 
 def wait_for_be(timeout_s: int = 180) -> bool:
@@ -425,11 +430,20 @@ def cmd_status(
         status, detail = check_one(role, base, str(node.get("health", "/health")))
         all_ok = all_ok and status == "OK"
         rows.append((role, base, status, detail))
+        for svc in dict(node.get("start", {})).get("extra", []):
+            assert isinstance(svc, dict)
+            if not svc.get("port"):
+                continue
+            label = f"{role}:{svc.get('nome', 'extra')}"
+            svc_base = f"http://{host}:{int(svc['port'])}"
+            st, de = check_one(label, svc_base, str(svc.get("health", "/health")))
+            all_ok = all_ok and st == "OK"
+            rows.append((label, svc_base, st, de))
     if not silent:
         print("\n[lan] stato LAN:")
-        print(f"{'ruolo':<7} {'indirizzo':<28} {'stato':<5} dettaglio")
+        print(f"{'servizio':<22} {'indirizzo':<28} {'stato':<5} dettaglio")
         for role, base, status, detail in rows:
-            print(f"{role:<7} {base:<28} {status:<5} {detail}")
+            print(f"{role:<22} {base:<28} {status:<5} {detail}")
     print("[lan] TUTTO OK" if all_ok else "[lan] qualcosa non risponde: vedi dettaglio sopra")
     return 0 if all_ok else 1
 
