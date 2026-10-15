@@ -9,8 +9,8 @@ git pull
 python lan\machine_setup.py
 ```
 
-1. chiede il ruolo (be/chat/voice) una sola volta → salvato in `lan/role.local.json`
-   (file locale, **non** committato);
+1. chiede il ruolo (be/chat/voice) una sola volta → salvato in `lan/macchina.json`
+   insieme all'**IP auto-rilevato** (file locale, **non** committato);
 2. riusa `setup/` (crea `.venv` + modelli se mancano);
 3. chiede l'IP LAN del BE → scrive il `.env` di quella macchina;
 4. mostra/applica la regola firewall per la sua porta;
@@ -20,6 +20,9 @@ Comandi utili:
 
 ```bat
 python lan\machine_setup.py --role voice --start   :: avvio diretto
+python lan\machine_setup.py --sono --role voice    :: identifica e basta (scrive macchina.json)
+python lan\machine_setup.py --mostra-identita      :: chi sono io + chi sono gli altri
+python lan\machine_setup.py --pubblica-ip          :: fissa il mio IP nel json condiviso (solo IP statici)
 python lan\machine_setup.py --status               :: ping HTTP a be/chat/voice
 python lan\machine_setup.py --be-host 192.168.1.10 --configure-only
 python lan\machine_setup.py --write-launcher       :: crea AVVIA_<RUOLO>.bat

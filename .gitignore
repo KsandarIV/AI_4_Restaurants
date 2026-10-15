@@ -237,4 +237,5 @@ voice/models/
 
 # Per-machine LAN role (scelto al primo avvio su ogni macchina, mai in git)
 lan/role.local.json
+lan/macchina.json
 AVVIA_*.bat
