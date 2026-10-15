@@ -42,7 +42,7 @@ avviarsi: il BE parte per primo e deve restare su. `--no-wait` salta l'attesa.
 | ruolo | porta | health | avvio |
 |---|---|---|---|
 | be | 8000 + 8080 | API + sito `frontend/` (servito dal BE, chiama chat/voice in LAN) |
-| chat | 8501 + 8002 | Streamlit + `chat/api.py` (log extra in `lan/logs/`, `BE_URL` all'IP BE) |
+| chat | 8501 + 8002 | Streamlit + `chat/api.py` (stesso terminale, `BE_URL` all'IP BE) |
 | voice | 8003 | `/health` | `python -m voicebot` (+WS `/ws/voice`) |
 
 ## Prerequisiti rete (una tantum)
