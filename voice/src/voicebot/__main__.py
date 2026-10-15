@@ -2,7 +2,7 @@
 
     python -m voicebot                run the live server (what avvia.py starts on the VOICE machine)
     python -m voicebot real           same, after checking the BE (waits for it to come up)
-    python -m voicebot local          LOCAL TEST: stub BE + voice server + browser, nothing else needed
+    python -m voicebot local          LOCAL TEST of v1 live: stub BE + voice server + test page, nothing else needed
     python -m voicebot doctor         why does it not work? (checks this machine and the BE)
     python -m voicebot v2 [--text]    on-demand voice chat from this PC
     python -m voicebot live [url]     live call from this PC (no browser)
@@ -55,7 +55,8 @@ def serve() -> None:
         settings.voice_port, settings.backend_base_url, settings.voice_language,
         settings.stt_backend, settings.tts_backend, settings.require_registration,
     )
-    log.info("site: http://localhost:%d/  |  `python -m voicebot doctor` explains any problem", settings.voice_port)
+    log.info("test page: http://localhost:%d/prova-vocale  |  site: http://localhost:%d/  |  `python -m voicebot doctor` explains any problem",
+             settings.voice_port, settings.voice_port)
     uvicorn.run(
         "voicebot.pipeline.server:create_default_app",
         factory=True,
@@ -84,6 +85,7 @@ def real(wait_s: float) -> None:
         print(f"[voice] {check['status'].upper():<4} {check['name']}: {check['detail']}")
         if check["hint"] and check["status"] != "ok":
             print(f"[voice]      -> {check['hint']}")
+    print(f"[voice] test page: http://localhost:{settings.voice_port}/prova-vocale   site: http://localhost:{settings.voice_port}/")
     if not be["ok"]:
         print("[voice] The BE is not reachable: starting anyway, calls will say so. "
               "Fix BACKEND_BASE_URL / start the BE, then `python -m voicebot doctor`.")

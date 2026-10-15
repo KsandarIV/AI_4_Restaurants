@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bella Napoli — Voice{{TITLE_SUFFIX}}</title>
+<title>Bella Napoli — Voce{{TITLE_SUFFIX}}</title>
 <style>
   :root {
     --bg: #fffaf3; --surface: #ffffff; --text: #2b211b; --muted: #6e5f55;
@@ -50,71 +50,71 @@
   .drawer a:hover { text-decoration: underline; }
   .drawer code { background: var(--bg); border: 1px solid var(--line); }
   .stage { max-width: 560px; margin: 0 auto; padding: 56px 24px 70px; text-align: center; }
-  .chat { max-width: 560px; margin: 8px auto 0; text-align: left; font-family: system-ui, sans-serif; font-size: .95rem; }
+  .state { min-height: 1.5em; margin-top: 6px; font-family: system-ui, sans-serif; font-size: .92rem; color: var(--muted); }
+  .chat { max-width: 560px; margin: 10px auto 0; text-align: left; font-family: system-ui, sans-serif; font-size: .95rem; }
   .chat p { margin: 6px 0; padding: 8px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
-  .chat p.you { background: #f6efe4; margin-left: 40px; }
+  .chat p.tu { background: #f6efe4; margin-left: 40px; }
   .chat p.bot { margin-right: 40px; }
-  .state { min-height: 1.4em; font-family: system-ui, sans-serif; font-size: .9rem; color: var(--muted); }
+  .diag td { overflow-wrap: anywhere; }
   .hint { font-size: .78rem; color: var(--muted); display: block; }
 </style>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="#">Bella Napoli · Voice{{TITLE_SUFFIX}}</a>
-  <span class="pill" id="srv">server: checking…</span>
+  <a class="brand" href="#">Bella Napoli · Voce{{TITLE_SUFFIX}}</a>
+  <span class="pill" id="srv">server: verifica…</span>
 </header>
 {{TEST_BANNER}}
 
-<button class="drawer-tab" id="tab" aria-label="Open technical details">ⓘ TECH</button>
-<button class="drawer-tab two" id="tab2" aria-label="Open system status">◉ STATUS</button>
-<aside class="drawer" id="drawer" aria-label="Technical details">
-  <button class="close" id="close" aria-label="Close">✕</button>
-  <h2>Full sheets</h2>
+<button class="drawer-tab" id="tab" aria-label="Apri dettagli tecnici">ⓘ TECNICA</button>
+<button class="drawer-tab two" id="tab2" aria-label="Apri stato sistema">◉ STATO</button>
+<aside class="drawer" id="drawer" aria-label="Dettagli tecnici">
+  <button class="close" id="close" aria-label="Chiudi">✕</button>
+  <h2>Schede complete</h2>
   <ul>
-    <li><a href="/tech-codice"><b>How the code works</b></a> — the pipeline, file by file.</li>
-    <li><a href="/tech-idea"><b>The idea in plain words</b></a> — ears, translator, brain and voice.</li>
-    <li><a href="/tech"><b>Technical sheet</b></a> — models, logic, strengths and weaknesses.</li>
+    <li><a href="/tech-codice"><b>Come è fatto il codice</b></a> — la pipeline disegnata, file per file.</li>
+    <li><a href="/tech-idea"><b>L'idea in parole semplici</b></a> — orecchie, traduttore, cervello e voce.</li>
+    <li><a href="/tech"><b>Scheda tecnica</b></a> — modelli, logica, punti di forza e deboli.</li>
+    <li><a href="/"><b>Il sito del ristorante</b></a> — menu, orari e <b>Le mie prenotazioni</b>.</li>
   </ul>
-  <h2>How it works (short)</h2>
+  <h2>Come funziona (in breve)</h2>
   <ul>
-    <li>Tap the orb, then just talk: at your <b>pause</b> the assistant answers.</li>
-    <li>It first asks your name and phone (like the chat bot), then handles bookings.</li>
-    <li>You can <b>interrupt</b> it while it speaks: it stops and listens.</li>
+    <li>Un tocco sull'orb, poi parli e basta: alla <b>pausa</b> rispondo da solo.</li>
+    <li>Puoi <b>interrompermi</b> mentre parlo: mi fermo e ti ascolto.</li>
   </ul>
-  <h2>Status and links</h2>
+  <h2>Stato e link</h2>
   <ul>
     <li>WS: <code id="wsurl"></code></li>
-    <li><a href="/health">health JSON</a> · <a href="/diag">diagnostics JSON</a> · <a href="/ready">ready</a></li>
-    <li><a href="/prova-vocale-test">TEST page</a> — twin page for local tests (title VOICE/TESTS)</li>
-    <li>Full docs: <code>voice/documentazione.md</code></li>
+    <li><a href="/tech">Scheda tecnica stampabile</a> · <a href="/health">health JSON</a></li>
+    <li><a href="/prova-vocale-test">Pagina TEST</a> — gemella per prove in locale (titolo VOICE/TESTS)</li>
+    <li>Doc completa: <code>voice/documentazione.md</code></li>
   </ul>
 </aside>
-<aside class="drawer" id="drawer2" aria-label="System status">
-  <button class="close" id="close2" aria-label="Close">✕</button>
-  <h2>System status</h2>
+<aside class="drawer" id="drawer2" aria-label="Stato del sistema">
+  <button class="close" id="close2" aria-label="Chiudi">✕</button>
+  <h2>Stato del sistema</h2>
   <table class="diag">
-    <tr><td>Voice (me)</td><td id="d-voice">…</td></tr>
-    <tr><td>Microphone</td><td id="d-mic">…</td></tr>
+    <tr><td>Voice (io)</td><td id="d-voice">…</td></tr>
+    <tr><td>Microfono</td><td id="d-mic">…</td></tr>
     <tr><td>WebSocket</td><td id="d-ws">…</td></tr>
     <tr><td>BE</td><td id="d-be">…</td></tr>
-    <tr><td>BE model</td><td id="d-model">…</td></tr>
+    <tr><td>Modello BE</td><td id="d-model">…</td></tr>
     <tr><td>STT / TTS</td><td id="d-modelli">…</td></tr>
   </table>
-  <h2>Checks</h2>
+  <h2>Controlli</h2>
   <table class="diag" id="checks"></table>
-  <h2>Latest events</h2>
-  <ul id="evlog"><li>No events yet: tap the orb and talk.</li></ul>
+  <h2>Ultimi eventi</h2>
+  <ul id="evlog"><li>Nessun evento ancora: tocca l'orb e parla.</li></ul>
 </aside>
 
 <main class="stage">
   <div class="orb-stage">
-    <canvas id="orb" width="520" height="520" aria-label="Tap to start or end the conversation"></canvas>
+    <canvas id="orb" width="520" height="520" aria-label="Tocca per avviare o terminare la conversazione"></canvas>
   </div>
-  <div class="state" id="state">Tap the orb to start</div>
+  <div class="state" id="state">Tocca l'orb per iniziare</div>
   <div class="chat" id="chat" aria-live="polite"></div>
-  <div id="sicuro" class="warn" style="display:none">⚠️ <b>The microphone needs a secure page:</b>
-    open <code>http://localhost:8003/prova-vocale</code> or use HTTPS.
-    From another PC without HTTPS run <code>python -m voicebot.live_client ws://&lt;this-host&gt;:8003/ws/voice</code>.</div>
+  <div id="sicuro" class="warn" style="display:none">⚠️ <b>Il microfono richiede una pagina sicura:</b>
+    aprila da <code>http://localhost:8003/prova-vocale</code> oppure con HTTPS.</div>
 </main>
 
 <script>
@@ -124,7 +124,7 @@ const wsurl = (location.protocol === "https:" ? "wss://" : "ws://") + location.h
 document.getElementById("wsurl").textContent = wsurl;
 const cv = document.getElementById("orb"),
       g = cv.getContext("2d");
-fetch("/health").then(r => r.ok ? "online" : "error").then(t => {
+fetch("/health").then(r => r.ok ? "online" : "errore").then(t => {
   document.getElementById("srv").textContent = "server: " + t;
 }).catch(() => document.getElementById("srv").textContent = "server: offline");
 const drawer = document.getElementById("drawer"), tab = document.getElementById("tab"),
@@ -146,32 +146,27 @@ tab2.addEventListener("mouseenter", () => { clearTimeout(closeTimer2); drawer2.c
 tab2.addEventListener("click", () => { drawer2.classList.toggle("open"); pollDiag(); });
 drawer2.addEventListener("mouseleave", scheduleClose2);
 document.getElementById("close2").addEventListener("click", () => drawer2.classList.remove("open"));
-
-// event log + live diagnostics: shows at a glance whether pauses and the model work
+// log eventi + diagnosi live: cosi' si vede se pause e modello funzionano
 function logEv(name) {
   const ul = document.getElementById("evlog");
-  if (ul.children.length === 1 && ul.textContent.startsWith("No events")) ul.innerHTML = "";
+  if (ul.querySelector("li") && ul.children.length === 1 && ul.textContent.startsWith("Nessun evento")) ul.innerHTML = "";
   const li = document.createElement("li");
-  const time = document.createElement("time");
-  time.textContent = new Date().toLocaleTimeString();
-  li.append(time, name);
+  const hh = new Date();
+  li.innerHTML = "<time>" + hh.toLocaleTimeString() + "</time>" + name;
   ul.prepend(li);
   while (ul.children.length > 8) ul.removeChild(ul.lastChild);
 }
 function cell(id, ok, text) {
-  const td = document.getElementById(id);
-  td.textContent = "";
-  const b = document.createElement("span");
-  b.className = ok ? "ok" : "ko"; b.textContent = ok ? "OK" : "KO";
-  td.append(b, " " + text);
+  document.getElementById(id).innerHTML = '<span class="' + (ok ? "ok" : "ko") + '">' + (ok ? "OK" : "KO") + "</span> " + text;
 }
 async function pollDiag() {
   try {
-    const d = await (await fetch("/diag")).json();
-    cell("d-voice", d.overall !== "fail", "server up, " + d.language + (d.require_registration ? ", registration on" : ""));
+    const r = await fetch("/diag");
+    const d = await r.json();
+    cell("d-voice", true, "server su, STT/TTS pronti");
     const be = d.be || {};
     cell("d-be", !!be.ok, (d.be_url || "") + " — " + (be.detail || ""));
-    cell("d-model", !!be.ok, be.model ? String(be.model) : (be.ok ? "(name not declared)" : "—"));
+    cell("d-model", !!be.ok, be.model ? String(be.model) : (be.ok ? "(nome non dichiarato)" : "—"));
     document.getElementById("d-modelli").textContent = (d.stt_backend || "?") + " / " + (d.tts_backend || "?");
     const table = document.getElementById("checks");
     table.textContent = "";
@@ -186,27 +181,27 @@ async function pollDiag() {
       }
     }
   } catch (e) {
-    cell("d-voice", false, "server unreachable");
-    cell("d-be", false, "cannot check"); cell("d-model", false, "—");
+    cell("d-voice", false, "server non raggiungibile");
+    cell("d-be", false, "verifica impossibile"); cell("d-model", false, "—");
   }
 }
 setInterval(() => { if (drawer2.classList.contains("open")) pollDiag(); }, 5000);
 pollDiag();
 
 let ws = null, ctx = null, stream = null, proc = null;
-let live = false, wantLive = false, retry = 0, retryTimer = null;
-let playQ = [], playing = false, curSrc = null, ttsRate = 22050, level = 0, mode = "idle";
+let live = false, wantLive = false, retry = 0, retryTimer = null, curSrc = null;
+let playQ = [], playing = false, ttsRate = 22050, level = 0, mode = "idle";
 let ripples = [], flash = 0, flashRed = 0;
-function msg(t) { document.getElementById("state").textContent = String(t); }
+function msg(t) { document.getElementById("state").textContent = String(t).replace(/<[^>]*>/g, ""); }
 function say(who, text) {
   const p = document.createElement("p");
-  p.className = who; p.textContent = (who === "you" ? "You: " : "Bot: ") + text;
+  p.className = who; p.textContent = (who === "tu" ? "Tu: " : "Bot: ") + text;
   const box = document.getElementById("chat");
   box.append(p); p.scrollIntoView({ block: "nearest" });
 }
 function rms(buf) { let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i]; return Math.sqrt(s / buf.length); }
 
-// ---- liquid orb: sine/cosine blob + orbiting dots ----
+// ---- orb liquido: blob seno/coseno + puntini orbitali ----
 const CX = 260, CY = 260, R = 150;
 const dots = Array.from({ length: 16 }, (_, i) => {
   const base = R * (0.78 + Math.random() * 0.34);
@@ -288,10 +283,12 @@ function draw(tms) {
     g.fillRect(0, 0, 520, 520); flashRed *= 0.92;
   }
   requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
 
 async function playLoop() {
   if (playing) return; playing = true; mode = "speaking";
-  logEv("voice reply arriving");
+  logEv("risposta vocale in arrivo");
   const actx = ctx;
   while (playQ.length && actx) {
     const chunk = playQ.shift();
@@ -300,13 +297,13 @@ async function playLoop() {
     for (let i = 0; i < n; i++) d[i] = dv.getInt16(i * 2, true) / 32768;
     const src = actx.createBufferSource(); src.buffer = f; src.connect(actx.destination); src.start();
     curSrc = src;
-    msg("🔊 Speaking… talk over me to interrupt.");
+    msg("🔊 Sto parlando… parla pure sopra per interrompermi.");
     await new Promise(r => src.onended = r);
   }
   curSrc = null; playing = false; mode = live ? "listening" : "idle";
-  if (live) msg("🎤 Listening… pause when you are done.");
+  if (live) msg("🎤 Ti ascolto… fai una pausa quando hai finito.");
 }
-function stopPlayback() {
+function stopPlayback() {  // barge-in: silence NOW, not at the end of the current chunk
   playQ = [];
   if (curSrc) { try { curSrc.stop(); } catch (e) {} }
 }
@@ -315,35 +312,37 @@ function onMessage(ev) {
   let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
   if (m.event === "ready") {
     if (m.tts_sample_rate) ttsRate = m.tts_sample_rate;
-    cell("d-ws", true, "connected"); live = true; mode = "listening"; msg("🎤 Listening…");
+    cell("d-ws", true, "connesso"); live = true; mode = "listening"; msg("🎤 Ti ascolto…");
   }
-  if (m.event === "loading") { mode = "thinking"; msg("Loading the speech models…"); logEv("models loading"); }
-  if (m.event === "heard") { mode = "heard"; logEv("pause captured by the server"); }
-  if (m.event === "transcript") { say("you", m.text); logEv("understood: " + m.text.length + " chars"); }
-  if (m.event === "thinking") { mode = "thinking"; logEv("model at work"); msg("Thinking…"); }
+  if (m.event === "loading") { mode = "thinking"; msg("Carico i modelli vocali…"); logEv("modelli in caricamento"); }
+  if (m.event === "heard") { mode = "heard"; logEv("pausa captata dal server"); }
+  if (m.event === "transcript") { say("tu", m.text); logEv("capito: " + m.text.length + " caratteri"); }
+  if (m.event === "thinking") { mode = "thinking"; logEv("modello al lavoro"); msg("Ci penso…"); }
   if (m.event === "reply") { say("bot", m.text); }
-  if (m.event === "barge_in") { stopPlayback(); flash = 1; mode = "listening"; logEv("interruption (barge-in)"); msg("🎤 Listening…"); }
+  if (m.event === "barge_in") { stopPlayback(); flash = 1; mode = "listening"; logEv("interruzione (barge-in)"); msg("🎤 Ti ascolto…"); }
+  if (m.event === "registered") { logEv("cliente registrato (id anonimo)"); }
+  if (m.event === "reservation") { logEv("prenotazione " + m.code + ": " + m.status); }
   if (m.event === "error") {
-    flashRed = 1; logEv("error: " + (m.detail || "") + " " + (m.message || ""));
-    msg("Problem: " + (m.detail || "error") + " — see STATUS"); pollDiag();
+    flashRed = 1; logEv("errore: " + (m.detail || "") + " " + (m.message || ""));
+    msg("Problema: " + (m.detail || "errore") + " — vedi STATO"); pollDiag();
   }
 }
 function connect() {
   ws = new WebSocket(wsurl); ws.binaryType = "arraybuffer";
-  ws.onopen = () => { retry = 0; cell("d-ws", true, "socket open"); };
+  ws.onopen = () => { retry = 0; cell("d-ws", true, "socket aperto"); };
   ws.onmessage = onMessage;
   ws.onerror = () => {};
   ws.onclose = () => {
-    live = false; cell("d-ws", false, "closed");
+    live = false; cell("d-ws", false, "chiuso");
     if (!wantLive) return;
     const delay = Math.min(500 * 2 ** retry, 8000); retry++;  // exponential backoff
-    mode = "idle"; msg("Connection lost: retrying in " + (delay / 1000).toFixed(1) + " s…");
-    logEv("reconnecting in " + delay + " ms");
+    mode = "idle"; msg("Connessione persa: riprovo tra " + (delay / 1000).toFixed(1) + " s…");
+    logEv("riconnessione tra " + delay + " ms");
     retryTimer = setTimeout(connect, delay);
   };
 }
 cv.addEventListener("click", async () => {
-  if (wantLive) { hangUp(); return; }
+  if (wantLive) { termina(); return; }
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SR });
     stream = await navigator.mediaDevices.getUserMedia({
@@ -360,21 +359,18 @@ cv.addEventListener("click", async () => {
     };
     src.connect(proc); proc.connect(ctx.destination);
     wantLive = true; retry = 0; connect();
-    cell("d-mic", true, "permission granted, microphone open");
-    logEv("microphone open"); msg("Connecting…");
-  } catch (e) {
-    flashRed = 1; cell("d-ws", false, "connection failed"); cell("d-mic", false, "blocked");
-    logEv("error: " + e); msg("Error: " + e + " (microphone only on localhost/HTTPS)");
-  }
+    cell("d-mic", true, "permesso ok, microfono aperto");
+    logEv("microfono aperto"); msg("Mi collego…");
+  } catch (e) { flashRed = 1; cell("d-ws", false, "connessione fallita"); cell("d-mic", false, "bloccato"); logEv("errore: " + e); msg("Errore: " + e + " (microfono solo da localhost/HTTPS)"); }
 });
-function hangUp() {
+async function termina() {
   wantLive = false; live = false; clearTimeout(retryTimer); stopPlayback(); level = 0; mode = "idle";
-  cell("d-ws", false, "closed"); cell("d-mic", false, "closed");
-  logEv("conversation ended");
+  cell("d-ws", false, "chiuso"); cell("d-mic", false, "chiuso");
+  logEv("conversazione terminata");
   try { if (ws) ws.close(); } catch (e) {}
   try { if (proc) proc.disconnect(); if (stream) stream.getTracks().forEach(t => t.stop()); if (ctx) ctx.close(); } catch (e) {}
   ws = proc = stream = ctx = null;
-  msg("Conversation ended. Tap the orb to start again.");
+  msg("Conversazione terminata. Tocca l'orb per ricominciare.");
 }
 </script>
 </body>

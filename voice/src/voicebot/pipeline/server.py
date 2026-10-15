@@ -153,7 +153,7 @@ def _page(name: str, test: bool = False, be_url: str = "") -> str:
         banner = (
             '<div style="background:#3a1f14;color:#fff;text-align:center;padding:8px;'
             'font-family:system-ui,sans-serif;font-size:.85rem;letter-spacing:.08em">'
-            f"VOICE / TESTS - test environment · BE in use: {be_url}</div>"
+            f"VOICE / TESTS — ambiente di test · BE in uso: {be_url}</div>"
         )
         return html.replace("{{TITLE_SUFFIX}}", " / TESTS").replace("{{TEST_BANNER}}", banner)
     return html.replace("{{TITLE_SUFFIX}}", "").replace("{{TEST_BANNER}}", "")
@@ -241,11 +241,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/prova-vocale", response_class=HTMLResponse, include_in_schema=False)
     async def voice_page() -> str:
-        return _page("voice_test.html", False, settings.backend_base_url)
+        """The live test page. In local mode (stub BE) it always carries the VOICE / TESTS banner."""
+        return _page("voice_test.html", settings.mode == "local", settings.backend_base_url)
 
     @app.get("/prova-vocale-test", response_class=HTMLResponse, include_in_schema=False)
     async def voice_test_page() -> str:
-        """Same page with a banner showing which BE this instance talks to."""
+        """Same page, always with the banner that shows which BE this instance talks to."""
         return _page("voice_test.html", True, settings.backend_base_url)
 
     for route, name in (("/tech", "tech.html"), ("/tech-codice", "tech_codice.html"),

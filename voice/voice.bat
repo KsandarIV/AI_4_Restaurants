@@ -1,7 +1,7 @@
 @echo off
 REM Voice bot, one entry point (Windows). Run from anywhere:  voice\voice.bat <command>
 REM
-REM   voice local         LOCAL TEST: stub BE + voice server + browser (nothing else needed)
+REM   voice local         LOCAL TEST of v1 live: stub BE + voice server + the test page (nothing else needed)
 REM   voice local --fake  same, without speech models (page/flow test only)
 REM   voice real          REAL flow component: checks the BE, waits for it, serves on :8003
 REM                       (the full three-machine flow is still:  python entrypoint\avvia.py)
