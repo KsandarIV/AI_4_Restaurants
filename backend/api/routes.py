@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.config import settings
+from backend.llm_provider import ModelUnavailable, resolve_ollama_model
 from backend.database.connection import get_db, SessionLocal
 from backend.database import crud
 from backend.graph.workflow import process_message
@@ -34,7 +35,7 @@ def _llm_unavailable(exc: BaseException) -> bool:
     seen = set()
     while exc is not None and id(exc) not in seen:
         seen.add(id(exc))
-        if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, ConnectionError, TimeoutError)):
+        if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, ConnectionError, TimeoutError, ModelUnavailable)):
             return True
         exc = exc.__cause__ or exc.__context__
     return False
@@ -246,17 +247,20 @@ def get_info_endpoint(key: Optional[str] = Query(None, description="Chiave speci
     return crud.get_restaurant_info(db, key=key)
 
 def _check_llm():
-    """(server reachable, configured model installed) - quick check, never raises."""
+    """(server reachable, a usable model is installed, name of the model in use) - quick check, never raises."""
     if settings.LLM_PROVIDER == "mock":
-        return True, True
+        return True, True, settings.OLLAMA_MODEL
     try:
-        tags = httpx.get(f"{settings.OLLAMA_BASE_URL}/api/tags", timeout=1.5).json()
-        names = {m.get("name", "") for m in tags.get("models", [])}
-        wanted = settings.OLLAMA_MODEL
-        installed = wanted in names or any(n.split(":")[0] == wanted for n in names)
-        return True, installed
+        names = {m.get("name", "") for m in httpx.get(f"{settings.OLLAMA_BASE_URL}/api/tags", timeout=1.5).json().get("models", [])}
     except Exception:
-        return False, False
+        return False, False, settings.OLLAMA_MODEL
+    try:
+        name, _ = resolve_ollama_model()  # decided once, then remembered
+    except ModelUnavailable:
+        return True, False, settings.OLLAMA_MODEL
+    except Exception:
+        return False, False, settings.OLLAMA_MODEL
+    return True, name in names, name
 
 
 @router.get("/health", response_model=HealthResponse, summary="Healthcheck: database e modello rispondono davvero")
@@ -267,12 +271,12 @@ def health_endpoint():
         db_ok = True
     except Exception:
         db_ok = False
-    llm_reachable, model_installed = _check_llm()
+    llm_reachable, model_installed, model_name = _check_llm()
     return HealthResponse(
         status="online" if (db_ok and llm_reachable and model_installed) else "degraded",
         restaurant=settings.RESTAURANT_NAME,
         llm_provider=settings.LLM_PROVIDER,
-        llm_model=settings.OLLAMA_MODEL,
+        llm_model=model_name,
         database="SQLite (connected)" if db_ok else "SQLite (ERRORE)",
         llm_reachable=llm_reachable,
         llm_model_available=model_installed

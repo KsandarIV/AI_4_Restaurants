@@ -200,6 +200,12 @@ Nome e telefono compaiono **solo** qui: mai nelle risposte destinate ai clienti 
 
 **Dati personali nel tempo.** `python -m backend.maintenance purge --dry-run` mostra quanti clienti verrebbero cancellati; senza `--dry-run` cancella nome e telefono di chi è registrato da più di `DATA_RETENTION_DAYS` giorni (predefinito 90) e non ha prenotazioni recenti. Le prenotazioni restano, anonime.
 
+**Scelta e verifica del modello.** Il BE sceglie il modello da solo (vedi `OLLAMA_MODEL`), lo scrive nel log e lo mostra in `/api/health`. `python -m backend.check_model` fa una breve conversazione di prova (saluto, orari, menu, prenotazione con conferma, frase senza senso) su un database temporaneo e stampa OK/KO con i tempi; con `--model nome` si prova un altro modello. Va eseguito prima della demo e a ogni cambio di modello.
+
+**Backup e chiave staff.** `python -m backend.maintenance backup` copia il database in `backend/backups/` (tiene gli ultimi 14); `python -m backend.maintenance staff-key` genera una chiave casuale da mettere nel `.env`.
+
+**Messa in produzione.** Checklist della prova generale sulle tre macchine e scaletta delle presentazioni: [PRODUZIONE.md](PRODUZIONE.md).
+
 **Vedere il database.** File `backend/restaurant.db` (SQLite): aprirlo in sola lettura con *DB Browser for SQLite*, oppure usare la pagina staff.
 
 **Impostazioni** (variabili d'ambiente o `.env`, vedi `.env.example`):
@@ -208,7 +214,10 @@ Nome e telefono compaiono **solo** qui: mai nelle risposte destinate ai clienti 
 |---|---|---|
 | `STAFF_API_KEY` | vuota | Chiave dell'area staff (vuota = disabilitata) |
 | `REQUIRE_CUSTOMER_REGISTRATION` | `true` | Prenotare richiede un cliente registrato; solo il proprietario vede/modifica/cancella |
-| `OLLAMA_MODEL`, `OLLAMA_REASONING` | `llama3.2`, vuota | Modello; `false` spegne il "thinking" dei modelli che ragionano (gemma4: risposte molto più veloci) |
+| `OLLAMA_MODEL` | `gemma4:12b` | Modello, o elenco in ordine di preferenza (`gemma4:12b,gemma4-coder`): si usa il primo installato in Ollama **che sappia usare gli strumenti** |
+| `OLLAMA_FALLBACK_MODELS` | `gemma4-coder,llama3.2` | Ripieghi se nessuno dei preferiti è installato (così ogni macchina funziona con i modelli che ha) |
+| `OLLAMA_REASONING` | vuota = spento | "Thinking" dei modelli che ragionano: spento = risposte in 4-7 s invece di 10-30. `true` solo se il modello lo supporta |
+| `OLLAMA_KEEP_ALIVE` | `30m` | Quanto Ollama tiene il modello in memoria; il BE lo carica all'avvio |
 | `OLLAMA_TIMEOUT_S` | `120` | Dopo quanti secondi il modello è considerato non raggiungibile |
 | `CLOSED_WEEKDAYS` | `0` | Giorni di chiusura settimanale (0 = lunedì … 6 = domenica) |
 | `CORS_ORIGINS` | `*` | Origini web ammesse, separate da virgola |

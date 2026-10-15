@@ -33,12 +33,16 @@ class Settings(BaseModel):
     # LLM Settings (Local Environment)
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "ollama")  # "ollama" or "mock"
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
+    # One name or a comma separated list in order of preference ("gemma4:12b,gemma4-coder"). The first one that is
+    # installed in Ollama AND can call tools is used; if none is, OLLAMA_FALLBACK_MODELS are tried.
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "gemma4:12b")
+    OLLAMA_FALLBACK_MODELS: List[str] = [m.strip() for m in os.getenv("OLLAMA_FALLBACK_MODELS", "gemma4-coder,llama3.2").split(",") if m.strip()]
+    OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")  # how long Ollama keeps the model in memory
     LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.1"))
     OLLAMA_TIMEOUT_S: float = float(os.getenv("OLLAMA_TIMEOUT_S", "120"))  # a stuck model must not hang the server
-    # "thinking" of reasoning models (e.g. gemma4): true/false to force it, empty = model default.
-    # Turning it off makes answers much faster. "false" is safe with every model; "true" fails on models
-    # that cannot think (e.g. llama3.2: "does not support thinking").
+    # "thinking" of reasoning models (e.g. gemma4). Empty = OFF: a booking assistant does not need to think and
+    # answers 3-6 times faster without. "false" is safe with every model; "true" is used only if the model
+    # supports it (llama3.2 would fail with "does not support thinking").
     OLLAMA_REASONING: Optional[bool] = (
         os.getenv("OLLAMA_REASONING", "").strip().lower() in ("true", "1", "yes")
         if os.getenv("OLLAMA_REASONING", "").strip() else None

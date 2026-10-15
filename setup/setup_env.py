@@ -259,6 +259,25 @@ def step_requirements(python: str) -> bool:
                 warn(f"installazione di ./{pkg} fallita (non bloccante):\n{out[-1000:]}")
             else:
                 good(f"./{pkg} installato.")
+    return step_spacy_model(python)
+
+
+SPACY_MODEL = "it_core_news_md"
+
+
+def step_spacy_model(python: str) -> bool:
+    """Modello italiano di spaCy per il CHAT (anonimizzatore): non e' un pacchetto di requirements.txt, si scarica a parte."""
+    code, _ = run([python, "-c", f"import spacy; spacy.load('{SPACY_MODEL}')"], timeout=180)
+    if code == 0:
+        good(f"modello spaCy {SPACY_MODEL} gia' presente.")
+        return True
+    info(f"scarico il modello italiano di spaCy ({SPACY_MODEL}, ~40 MB, serve al CHAT)...")
+    code, out = run([python, "-m", "spacy", "download", SPACY_MODEL], timeout=900)
+    if code != 0:
+        print(_error_tail(out))
+        bad(f"download del modello spaCy fallito: il CHAT non partirebbe. Riprova con: {python} -m spacy download {SPACY_MODEL}")
+        return False
+    good(f"modello spaCy {SPACY_MODEL} pronto.")
     return True
 
 
