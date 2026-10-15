@@ -14,6 +14,7 @@ window.CONFIG = {
     menuPath: "/api/menu",   // GET -> [{category, name, description, price, allergens, is_vegetarian, is_vegan, is_gluten_free}]
     infoPath: "/api/info",   // GET -> {chiave: valore} (name, address, phone, email, opening_hours, parking, services, payment_methods)
     healthPath: "/api/health",
+    staffPath: "/api/staff",  // area del ristoratore (header X-API-Key): /reservations, /closures, /menu
   },
 
   // --- CHAT (membro 2): servizio chat/api.py ---

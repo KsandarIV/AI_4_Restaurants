@@ -95,6 +95,12 @@ class ClosureRequest(BaseModel):
     date: str = Field(..., description="Data di chiusura AAAA-MM-GG")
     reason: Optional[str] = Field(None, max_length=200, description="Motivo (es. Ferragosto)")
 
+class StaffReservationUpdate(BaseModel):
+    new_date: Optional[str] = Field(None, description="Nuova data (AAAA-MM-GG)")
+    new_time: Optional[str] = Field(None, description="Nuovo orario (HH:MM)")
+    new_guests: Optional[int] = Field(None, ge=1, le=20, description="Nuovo numero di ospiti")
+    new_requests: Optional[str] = Field(None, description="Nuove note speciali (stringa vuota = nessuna nota)")
+
 class MenuItemUpdate(BaseModel):
     available: Optional[bool] = Field(None, description="false = piatto esaurito, non viene più proposto")
     price: Optional[float] = Field(None, gt=0)

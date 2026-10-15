@@ -167,3 +167,44 @@ def test_swagger_lists_each_route_once_under_api(client):
     assert "/api/reservations" in paths and "/api/staff/reservations" in paths
     assert not {"/reservations", "/menu", "/chat"} & paths  # root aliases still work but are hidden
     assert client.get("/menu").status_code == 200
+
+
+# ---------------------------------------------------------------- staff area: edit and cancel reservations
+
+def test_staff_can_modify_a_reservation_of_any_customer(client, booking):
+    new_date = future_date(21)
+    res = client.patch(f"/api/staff/reservations/{booking['code']}", headers=KEY,
+                       json={"new_date": new_date, "new_time": "21:00", "new_guests": 4})
+    assert res.status_code == 200
+    assert (res.json()["date"], res.json()["time"], res.json()["guests_count"]) == (new_date, "21:00", 4)
+
+
+def test_staff_modify_and_cancel_need_the_key(client, booking):
+    assert client.patch(f"/api/staff/reservations/{booking['code']}", json={"new_guests": 2}).status_code == 401
+    assert client.delete(f"/api/staff/reservations/{booking['code']}").status_code == 401
+
+
+def test_staff_modify_reports_clean_errors(client, booking):
+    assert client.patch("/api/staff/reservations/RES-NOPE00", headers=KEY, json={"new_guests": 2}).status_code == 404
+    bad = client.patch(f"/api/staff/reservations/{booking['code']}", headers=KEY, json={"new_date": "31/12/2099"})
+    assert bad.status_code == 400 and bad.json()["detail"]
+
+
+def test_staff_can_cancel_a_reservation(client, booking):
+    res = client.delete(f"/api/staff/reservations/{booking['code']}", headers=KEY)
+    assert res.status_code == 200 and res.json()["status"] == "CANCELLED"
+    listed = client.get("/api/staff/reservations", headers=KEY, params={"date": booking["date"], "status": "CANCELLED"}).json()
+    assert booking["code"] in [r["booking_code"] for r in listed]
+
+
+def test_staff_menu_lists_sold_out_dishes_too(client):
+    dishes = client.get("/api/staff/menu", headers=KEY).json()
+    assert dishes and {"id", "name", "price", "available"} <= set(dishes[0])
+    assert client.get("/api/staff/menu").status_code == 401
+    first = dishes[0]
+    try:
+        assert client.patch(f"/api/staff/menu/{first['id']}", headers=KEY, json={"available": False}).status_code == 200
+        assert next(d for d in client.get("/api/staff/menu", headers=KEY).json() if d["id"] == first["id"])["available"] is False
+        assert first["name"] not in [m["name"] for m in client.get("/api/menu").json()]
+    finally:
+        client.patch(f"/api/staff/menu/{first['id']}", headers=KEY, json={"available": True})
