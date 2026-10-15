@@ -103,3 +103,10 @@ a { color: var(--accent); }
   .assistant { right: 0; bottom: 0; width: 100vw; height: 100dvh; border-radius: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+.footer-staff { margin-top: 8px; font-size: .8rem; opacity: .8; }
+.footer a { color: #e9d9c8; }
+
+.staff-box { background: var(--hero); color: #e9d9c8; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.staff-box .staff-note { font-size: .85rem; opacity: .8; }
+a.btn { text-decoration: none; display: inline-block; }

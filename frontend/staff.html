@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Area ristoratore · Bella Napoli</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/staff.css">
+</head>
+<body class="staff">
+  <header class="topbar">
+    <a class="brand" href="index.html">Bella Napoli</a>
+    <span class="staff-tag">Area ristoratore</span>
+    <button id="logout" class="btn btn-small btn-outline" hidden>Esci</button>
+  </header>
+
+  <main class="staff-main">
+    <!-- Accesso -->
+    <section id="login" class="panel narrow">
+      <h1>Area ristoratore</h1>
+      <p>Inserisci la chiave di accesso (<code>STAFF_API_KEY</code> del backend). Non viene salvata oltre la chiusura della scheda.</p>
+      <form id="login-form" autocomplete="off">
+        <label for="key">Chiave</label>
+        <input id="key" type="password" required>
+        <button class="btn" type="submit">Entra</button>
+      </form>
+      <p id="login-msg" class="msg-line" role="alert"></p>
+    </section>
+
+    <!-- Gestione -->
+    <div id="app" hidden>
+      <nav class="staff-tabs" role="tablist">
+        <button role="tab" data-tab="reservations" aria-selected="true">Prenotazioni</button>
+        <button role="tab" data-tab="closures" aria-selected="false">Chiusure</button>
+        <button role="tab" data-tab="menu" aria-selected="false">Menu</button>
+      </nav>
+      <p id="app-msg" class="msg-line" role="status"></p>
+
+      <!-- Prenotazioni -->
+      <section id="tab-reservations" class="panel">
+        <form id="filters" class="toolbar">
+          <label>Data <input id="f-date" type="date"></label>
+          <label>Stato
+            <select id="f-status">
+              <option value="">Tutte</option>
+              <option value="CONFIRMED">Confermate</option>
+              <option value="CANCELLED">Cancellate</option>
+            </select>
+          </label>
+          <button class="btn btn-small" type="submit">Aggiorna</button>
+          <button class="btn btn-small btn-outline" type="button" id="f-today">Oggi</button>
+          <button class="btn btn-small btn-outline" type="button" id="f-all">Da oggi in poi</button>
+        </form>
+        <p id="res-count" class="hint-line"></p>
+        <div class="table-wrap">
+          <table id="res-table">
+            <thead>
+              <tr><th>Data</th><th>Ora</th><th>Persone</th><th>Tavolo</th><th>Cliente</th><th>Telefono</th><th>Note</th><th>Stato</th><th>Codice</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Chiusure -->
+      <section id="tab-closures" class="panel" hidden>
+        <form id="closure-form" class="toolbar">
+          <label>Data <input id="c-date" type="date" required></label>
+          <label>Motivo <input id="c-reason" type="text" maxlength="200" placeholder="es. Ferragosto"></label>
+          <button class="btn btn-small" type="submit">Chiudi il locale</button>
+        </form>
+        <p class="hint-line">Le prenotazioni già fatte per quel giorno non vengono cancellate: ti avvisiamo e le trovi in elenco.</p>
+        <ul id="closure-list" class="plain-list"></ul>
+      </section>
+
+      <!-- Menu -->
+      <section id="tab-menu" class="panel" hidden>
+        <p class="hint-line">Un piatto segnato come esaurito sparisce subito dal menu del sito e del chatbot.</p>
+        <div id="menu-staff"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Modifica prenotazione -->
+  <dialog id="edit-dialog">
+    <form id="edit-form" method="dialog">
+      <h2>Modifica prenotazione <span id="e-code"></span></h2>
+      <p id="e-who" class="hint-line"></p>
+      <label>Data <input id="e-date" type="date" required></label>
+      <label>Ora <input id="e-time" type="time" required></label>
+      <label>Persone <input id="e-guests" type="number" min="1" max="20" required></label>
+      <label>Note <textarea id="e-notes" rows="3" maxlength="300"></textarea></label>
+      <p id="e-msg" class="msg-line" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="btn btn-outline" type="button" id="e-cancel">Annulla</button>
+        <button class="btn" type="submit">Salva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/config.js"></script>
+  <script src="js/staff.js"></script>
+</body>
+</html>

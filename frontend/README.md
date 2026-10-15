@@ -42,6 +42,19 @@ Se il BE è spento il sito resta visibile con testi di riserva e l'assistente av
 | Logica della chat (registrazione, anonimizzazione, chiamata al BE) | tutta in Python | `chat/api.py`, `chat/contatti.py`, `chat/anonimizzatore.py`: il sito non si tocca |
 | Protocollo audio del VOICE | frequenze, eventi | `config.js` → `voice` e `frontend/js/voice.js` |
 | Grafica e testi | | `frontend/css/style.css` (colori in `:root`), `frontend/index.html` |
+| Endpoint dell'area staff del BE | path e campi | `config.js` → `be.staffPath` e `frontend/js/staff.js` (unico file che parla con l'area staff) |
+
+## Area ristoratore (`staff.html`)
+
+Link "Area ristoratore" nel piè di pagina del sito, oppure direttamente `http://localhost:8080/staff.html`. Si entra con la chiave `STAFF_API_KEY` del `.env` del BE (si genera con `python -m backend.maintenance staff-key`); la chiave resta solo nella scheda del browser e sparisce alla chiusura (o con "Esci").
+
+Tre schede:
+- **Prenotazioni**: elenco con nome e telefono del cliente, filtro per data e stato, totale coperti; **Modifica** (data, ora, persone, note) e **Cancella**. Se non c'è un tavolo libero il BE rifiuta la modifica e il motivo compare nella finestra.
+- **Chiusure**: chiude o riapre il locale in una data. Le prenotazioni già fatte non vengono cancellate: la pagina le elenca.
+- **Menu**: segna un piatto come esaurito o di nuovo disponibile.
+
+Richiede nel BE gli endpoint `/api/staff/...` (anche `PATCH`/`DELETE` delle prenotazioni e `GET /api/staff/menu`, aggiunti con questa pagina). Il BE deve accettare richieste da altri indirizzi (CORS già aperto) e la porta del BE raggiungibile dal browser.
+Attenzione: nome e telefono dei clienti viaggiano in HTTP non cifrato; usare l'area solo sulla rete locale.
 
 Ogni componente ha **un solo file JS** che lo conosce (`site.js` BE, `chat.js` CHAT, `voice.js` VOICE); `assistant.js` gestisce solo la finestra.
 
