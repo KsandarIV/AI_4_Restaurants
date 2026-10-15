@@ -17,17 +17,22 @@
 </head>
 <body>
 <h1>Voice-bot — prova vocale</h1>
-<p class="mut">Parla nel microfono: l'audio va al server (<code>/ws/voice</code>, PCM 16 kHz) e la
-risposta torna in questa pagina. Il microfono del browser funziona solo da
-<code>localhost</code>/HTTPS: apri questa pagina sulla macchina voice
-(<code>http://localhost:8003/prova-vocale</code>). Da altre macchine usa la v2
-(<code>python -m voicebot.v2</code>, microfono locale senza browser).</p>
+<div id="sicuro" style="display:none;background:#fff3cd;border:1px solid #e0a800;border-radius:8px;padding:10px;margin:10px 0;">
+⚠️ <b>Il microfono richiede una pagina sicura:</b> apri il sito da
+<code>http://localhost:8003/prova-vocale</code> oppure con HTTPS.
+Da un IP di rete il browser blocca il microfono (non è un nostro bug).
+</div>
+<p class="mut">Parla con naturalezza: puoi <b>interrompere l'assistente mentre risponde</b>.
+Serve il permesso al microfono (il browser lo chiede al primo uso).
+L'audio va al server (<code>/ws/voice</code>, PCM 16 kHz) e la risposta torna qui.
+Da altre macchine senza localhost usa la v2 (<code>python -m voicebot.v2</code>).</p>
 <p>WS: <code id="wsurl"></code></p>
 <button id="talk">🎤 Parla</button>
 <div id="vu"><div id="vubar"></div></div>
 <div id="stato">Premi “Parla”, parla, ripremi per fermare e ascoltare la risposta.</div>
 <script>
 const SR = 16000;
+if (!window.isSecureContext) document.getElementById("sicuro").style.display = "block";
 const wsurl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/voice";
 document.getElementById("wsurl").textContent = wsurl;
 const stato = document.getElementById("stato"), btn = document.getElementById("talk"), vu = document.getElementById("vubar");

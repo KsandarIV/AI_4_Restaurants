@@ -25,5 +25,6 @@ def test_voice_test_page() -> None:
     html = (Path(__file__).parent.parent / "src" / "voicebot" / "pipeline" / "voice_test.html").read_text(
         encoding="utf-8"
     )
-    for expected in ("/ws/voice", "getUserMedia", "AudioContext", "prova-vocale", "localhost"):
+    for expected in ("/ws/voice", "getUserMedia", "AudioContext", "prova-vocale", "localhost",
+                     "isSecureContext", "interrompere"):
         assert expected in html
