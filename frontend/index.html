@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trattoria Bella Napoli</title>
+  <meta name="description" content="Cucina campana nel cuore di Napoli. Menu, orari, dove siamo e prenotazione del tavolo in chat o a voce.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#top">Bella Napoli</a>
+    <nav>
+      <a href="#chi-siamo">Chi siamo</a>
+      <a href="#menu">Menu</a>
+      <a href="#dove">Dove siamo</a>
+      <a href="#contatti">Contatti</a>
+    </nav>
+    <button class="btn btn-small" data-open-assistant>Prenota</button>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="eyebrow">Trattoria · Via Toledo, Napoli</p>
+        <h1>La cucina campana, <br>come a casa della nonna.</h1>
+        <p class="lead">Paste di Gragnano, pomodori San Marzano, mozzarella di bufala. Prenota il tuo tavolo scrivendo o parlando con il nostro assistente.</p>
+        <div class="hero-actions">
+          <button class="btn" data-open-assistant data-mode="chat">Prenota in chat</button>
+          <button class="btn btn-ghost" data-open-assistant data-mode="voice">Prenota a voce</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="chi-siamo" class="section narrow">
+      <h2>Chi siamo</h2>
+      <p>Dal 1987 serviamo i piatti della tradizione napoletana con materie prime del territorio. Tre ambienti: la sala interna, la terrazza e il giardino estivo. Ogni tavolo è libero per un turno di 90 minuti, così più persone possono sedersi alla nostra tavola.</p>
+      <ul class="features">
+        <li><strong>3 ambienti</strong><span>sala, terrazza, giardino</span></li>
+        <li><strong>Senza glutine</strong><span>e opzioni vegetariane e vegane</span></li>
+        <li><strong>Per tutti</strong><span>accesso disabili, seggioloni, animali ammessi</span></li>
+      </ul>
+    </section>
+
+    <section id="menu" class="section">
+      <h2>Il menu</h2>
+      <div class="filters" id="menu-filters" role="group" aria-label="Filtri menu"></div>
+      <div id="menu-list" class="menu-list" aria-live="polite">Carico il menu…</div>
+      <p class="note">Le allergie e le intolleranze vanno segnalate al momento della prenotazione. I prezzi sono in euro.</p>
+    </section>
+
+    <section id="dove" class="section">
+      <h2>Dove siamo</h2>
+      <div class="two-col">
+        <div>
+          <h3>Indirizzo</h3>
+          <p data-info="address">—</p>
+          <h3>Orari</h3>
+          <p data-info="opening_hours">—</p>
+          <h3>Parcheggio</h3>
+          <p data-info="parking">—</p>
+        </div>
+        <div class="map-wrap">
+          <iframe id="map" title="Mappa del ristorante" loading="lazy" referrerpolicy="no-referrer"
+                  src="https://www.openstreetmap.org/export/embed.html?bbox=14.2440%2C40.8390%2C14.2560%2C40.8470&amp;layer=mapnik"></iframe>
+        </div>
+      </div>
+    </section>
+
+    <section id="contatti" class="section">
+      <h2>Contatti e servizi</h2>
+      <div class="two-col">
+        <div>
+          <h3>Telefono</h3>
+          <p><a data-info="phone" data-link="tel">—</a></p>
+          <h3>Email</h3>
+          <p><a data-info="email" data-link="mailto">—</a></p>
+        </div>
+        <div>
+          <h3>Servizi</h3>
+          <p data-info="services">—</p>
+          <h3>Pagamenti</h3>
+          <p data-info="payment_methods">—</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p><span data-info="name">Trattoria Bella Napoli</span> · <span data-info="address">Via Toledo 142, Napoli</span></p>
+  </footer>
+
+  <!-- ========== Assistente (chat + voce) ========== -->
+  <button id="assistant-fab" class="fab" aria-label="Apri l'assistente per prenotare" data-open-assistant>
+    <span aria-hidden="true">💬</span> Prenota
+  </button>
+
+  <section id="assistant" class="assistant" role="dialog" aria-label="Assistente prenotazioni" hidden>
+    <header class="assistant-head">
+      <div>
+        <strong>Assistente prenotazioni</strong>
+        <small id="assistant-status">—</small>
+      </div>
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-chat" aria-selected="true" data-mode="chat">Scrivi</button>
+        <button role="tab" id="tab-voice" aria-selected="false" data-mode="voice">Parla</button>
+      </div>
+      <button id="assistant-close" class="icon-btn" aria-label="Chiudi">✕</button>
+    </header>
+
+    <!-- Modalità testuale -->
+    <div id="pane-chat" class="pane">
+      <div id="chat-log" class="log" aria-live="polite"></div>
+      <form id="chat-form" class="composer" autocomplete="off">
+        <input id="chat-input" type="text" maxlength="2000" placeholder="Scrivi qui il tuo messaggio…" aria-label="Messaggio">
+        <button class="btn btn-small" type="submit">Invia</button>
+      </form>
+      <button id="chat-reset" class="link-btn" type="button">Nuova conversazione</button>
+    </div>
+
+    <!-- Modalità vocale -->
+    <div id="pane-voice" class="pane" hidden>
+      <div class="voice-stage">
+        <button id="voice-toggle" class="mic" type="button" aria-pressed="false">
+          <span class="mic-icon" aria-hidden="true">🎙️</span>
+          <span id="voice-label">Tocca per parlare</span>
+        </button>
+        <p id="voice-state" class="voice-state">Spento</p>
+        <p class="hint">Parla con naturalezza: puoi interrompere l'assistente mentre risponde. Serve il permesso al microfono.</p>
+      </div>
+    </div>
+  </section>
+
+  <script src="js/config.js"></script>
+  <script src="js/site.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/voice.js"></script>
+  <script src="js/assistant.js"></script>
+</body>
+</html>

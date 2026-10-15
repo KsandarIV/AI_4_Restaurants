@@ -238,3 +238,7 @@ voice/models/
 # Per-machine LAN role (scelto al primo avvio su ogni macchina, mai in git)
 lan/role.local.json
 AVVIA_*.bat
+
+# SQLite: file di appoggio del database
+*.db-shm
+*.db-wal
