@@ -154,6 +154,16 @@ def test_customer_id_reaches_reservation():
         app=app
     )
     assert res["customer_id"] == custom_cid
+    assert "Confermi" in res["reply"]  # the LLM only proposes; the customer must confirm
+
+    res = process_message(
+        message="sì",
+        session_id=session_id,
+        customer_id=custom_cid,
+        client_type="chat",
+        app=app
+    )
+    assert res["customer_id"] == custom_cid
 
     # Verify in DB
     import re

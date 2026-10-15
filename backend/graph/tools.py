@@ -14,7 +14,7 @@ def check_availability(date: str, time: str, guests: int, location: Optional[str
       - location: Preferenza sala ('interno', 'terrazza', 'giardino', facoltativo)
     """
     with SessionLocal() as db:
-        date_ok, date_err, _ = crud.validate_date(date)
+        date_ok, date_err, _ = crud.validate_date(date, db)
         if not date_ok:
             return date_err
 
@@ -152,21 +152,28 @@ def get_menu(
     allergen_free: Optional[str] = None,
     is_vegetarian: Optional[bool] = None,
     is_vegan: Optional[bool] = None,
-    is_gluten_free: Optional[bool] = None
+    is_gluten_free: Optional[bool] = None,
+    dish_type: Optional[str] = None
 ) -> str:
     """
-    Consulta il menu del ristorante con opzioni di filtro per categoria (Antipasti, Primi, Secondi, Contorni, Dessert, Bevande)
+    Consulta il menu del ristorante con opzioni di filtro per categoria (Antipasti, Primi, Secondi, Contorni, Dessert, Bevande),
+    per tipo di piatto (dish_type: 'carne', 'pesce', 'vegetale', 'dolce', 'bevanda')
     o esigenze dietetiche (senza glutine, vegetariano, vegano, o privo di uno specifico allergene).
+    Per i piatti di carne o di pesce usa dish_type, non category.
     """
     with SessionLocal() as db:
-        items = crud.get_menu_items(
-            db=db,
-            category=category,
-            allergen_free=allergen_free,
-            is_vegetarian=is_vegetarian,
-            is_vegan=is_vegan,
-            is_gluten_free=is_gluten_free
-        )
+        try:
+            items = crud.get_menu_items(
+                db=db,
+                category=category,
+                allergen_free=allergen_free,
+                is_vegetarian=is_vegetarian,
+                is_vegan=is_vegan,
+                is_gluten_free=is_gluten_free,
+                dish_type=dish_type
+            )
+        except crud.UnknownAllergen as e:
+            return str(e)  # never answer "nothing contains it" for an allergen we do not know
         if not items:
             return "Nessun piatto trovato con i criteri di ricerca specificati."
 
@@ -201,8 +208,8 @@ def get_restaurant_info(key: Optional[str] = None) -> str:
         if not info:
             return "Informazione non trovata."
 
-        if key and key in info:
-            return info[key]
+        if key and len(info) == 1:
+            return next(iter(info.values()))
 
         details = [
             f"Nome: {info.get('name', 'Trattoria Bella Napoli')}",

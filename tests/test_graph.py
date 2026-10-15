@@ -64,4 +64,14 @@ def test_graph_booking_flow():
         app=app
     )
     assert res["reply"] != ""
-    assert ("RES-" in res["reply"] or "confermata" in res["reply"].lower())
+    # the LLM only proposes: nothing is booked until the customer confirms
+    assert "RES-" not in res["reply"] and "Confermi" in res["reply"]
+
+    res = process_message(
+        message="sì",
+        session_id="test_sess_4",
+        customer_id="anon_client_test",
+        client_type="chat",
+        app=app
+    )
+    assert "RES-" in res["reply"] and "confermata" in res["reply"].lower()

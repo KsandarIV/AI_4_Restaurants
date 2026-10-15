@@ -1,6 +1,8 @@
 # lan — setup e avvio delle 3 macchine (Windows, Python puro, solo stdlib)
 
 Stesso script su tutte le macchine: riconosce il proprio ruolo e avvia il componente giusto.
+**Via consigliata: `python entrypoint\avvia.py`** (fa anche git pull + setup prima).
+Uso diretto (stessa macchina, codice già aggiornato):
 
 ## Primo giro su ogni macchina
 

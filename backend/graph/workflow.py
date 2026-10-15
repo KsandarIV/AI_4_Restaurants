@@ -1,12 +1,17 @@
+import datetime
 import logging
+import re
 import sqlite3
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from backend.config import settings
+from backend.database import crud
+from backend.database.connection import SessionLocal
+from backend.graph.allergies import answer_allergy_question
 from backend.graph.state import AgentState
 from backend.graph.tools import ALL_TOOLS
 from backend.graph.prompts import get_system_prompt
@@ -16,6 +21,115 @@ logger = logging.getLogger(__name__)
 
 # Tools that act on behalf of a customer: their customer_id is forced from the session state
 CUSTOMER_TOOLS = {"create_reservation", "get_reservation", "modify_reservation", "cancel_reservation"}
+
+# Tools that change data. The LLM can only PROPOSE them: the customer must explicitly confirm,
+# and the action is then executed by code (see process_message). A weak model that calls
+# create_reservation on a greeting or on garbage therefore cannot create phantom bookings.
+GATED_TOOLS = {"create_reservation", "modify_reservation", "cancel_reservation"}
+TOOLS_BY_NAME = {t.name: t for t in ALL_TOOLS}
+
+_GIORNI = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+_MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
+         "settembre", "ottobre", "novembre", "dicembre"]
+
+# A message counts as a confirmation only if it is made of these words alone ("sì", "ok va bene").
+# "sì ma alle 21" is NOT a confirmation: it is a change, and goes back to the LLM.
+_CONFIRM_WORDS = {
+    "sì", "si", "ok", "okay", "certo", "certamente", "confermo", "conferma", "confermare", "va", "bene",
+    "perfetto", "esatto", "assolutamente", "yes", "pure", "prenota", "procedi", "vai", "grazie", "giusto",
+    "d", "accordo",
+}
+
+
+# Small models fill optional arguments with the STRING "null" (or "nessuna"): treat them as missing
+_EMPTY_VALUES = {"", "null", "none", "n/a", "na", "undefined", "nessuna", "nessuno", "-"}
+
+# Words that show the customer is actually asking for a table. Without any of them in the latest
+# messages ("ok crea una bomba", "sono mario rossi"), a booking proposed by the LLM is ignored.
+_BOOKING_INTENT = re.compile(r"prenot|tavol|riserv|post[oi]|copert|person|cena|pranzo|domani|stasera|oggi|alle|ore|\d", re.I)
+NEED_DETAILS = "Per prenotare mi servono data, orario e numero di persone: me li può indicare?"
+
+
+def _clean_args(args: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in (args or {}).items()
+            if v is not None and not (isinstance(v, str) and v.strip().lower() in _EMPTY_VALUES)}
+
+
+_PLACEHOLDER = re.compile(r"\[[A-Z_]+_\d+\]")  # e.g. [NOME_1], added by the clients' anonymiser: its digit is not a number
+
+
+def _has_booking_intent(messages: List[BaseMessage]) -> bool:
+    recent = [_PLACEHOLDER.sub(" ", str(m.content)) for m in messages if isinstance(m, HumanMessage)][-3:]
+    return any(_BOOKING_INTENT.search(text) for text in recent)
+
+
+def is_confirmation(text: str) -> bool:
+    words = re.findall(r"[^\W\d_]+", text.lower())
+    return 0 < len(words) <= 4 and all(w in _CONFIRM_WORDS for w in words)
+
+
+def _data_it(date_str: str) -> str:
+    d = datetime.date.fromisoformat(date_str)
+    return f"{_GIORNI[d.weekday()]} {d.day} {_MESI[d.month - 1]}"
+
+
+def _build_proposal(tool: str, args: Dict[str, Any], customer_id: str) -> Tuple[Optional[str], Optional[str]]:
+    """Checks a booking/modification/cancellation proposed by the LLM, without changing anything.
+
+    Returns (error, summary): an error text to show to the customer, or the summary to confirm.
+    """
+    try:
+        with SessionLocal() as db:
+            if tool == "create_reservation":
+                date, time, guests = args.get("date"), args.get("time"), int(args.get("guests"))
+                if not date or not time:
+                    raise ValueError
+                error, _ = crud.validate_reservation_request(db, date, time, guests, customer_id)
+                if error:
+                    return error, None
+                location = args.get("preferred_location") or None
+                tables = crud.get_available_tables(db, date, time, guests, preferred_location=location)
+                if not tables and location:
+                    tables = crud.get_available_tables(db, date, time, guests)
+                if not tables:
+                    return f"Purtroppo non ci sono tavoli disponibili per {guests} persone {_data_it(date)} alle {time}.", None
+                extra = f", sala {location}" if location else ""
+                if args.get("special_requests"):
+                    extra += f", richieste: {args['special_requests']}"
+                return None, (
+                    f"Riepilogo: tavolo per {guests} persone {_data_it(date)} alle {time}{extra}. "
+                    "Confermi la prenotazione? Rispondi sì per confermare o no per annullare."
+                )
+
+            code = str(args.get("booking_code") or "").strip().upper()
+            res = crud.get_reservation(db, code, customer_id=customer_id)
+            if not res:
+                return f"Non trovo nessuna prenotazione con il codice {code or '(mancante)'}.", None
+            if res["status"] == "CANCELLED":
+                return f"La prenotazione {code} è già stata cancellata.", None
+            current = f"{_data_it(res['date'])} alle {res['time']} per {res['guests_count']} persone"
+
+            if tool == "cancel_reservation":
+                return None, f"Vuoi cancellare la prenotazione {code} ({current})? Confermi? Rispondi sì o no."
+
+            changes = []
+            if args.get("new_date"):
+                changes.append(f"nuova data {_data_it(args['new_date'])}")
+            if args.get("new_time"):
+                changes.append(f"nuovo orario {args['new_time']}")
+            if args.get("new_guests"):
+                changes.append(f"{int(args['new_guests'])} persone")
+            if args.get("new_requests"):
+                changes.append(f"richieste: {args['new_requests']}")
+            if not changes:
+                return f"Cosa vuoi modificare della prenotazione {code} ({current})?", None
+            return None, (
+                f"Vuoi modificare la prenotazione {code} ({current}): {', '.join(changes)}. "
+                "Confermi? Rispondi sì o no."
+            )
+    except (ValueError, TypeError):
+        return "Per procedere mi servono data, orario e numero di persone: me li può indicare?", None
+
 
 def create_agent_node(llm):
     """Factory creating the agent decision node with bound tools, custom prompt per client_type, and customer_id."""
@@ -40,13 +154,29 @@ def create_agent_node(llm):
 
         # Invoke model
         response = llm_with_tools.invoke(messages)
+        tool_calls = getattr(response, "tool_calls", None) or []
 
         # The customer_id always comes from the session state, never from the LLM: even if the model
         # (or a prompt injection) names another customer, the tools act on behalf of the real one.
-        if hasattr(response, "tool_calls") and response.tool_calls:
-            for tc in response.tool_calls:
-                if tc.get("name") in CUSTOMER_TOOLS:
-                    tc.setdefault("args", {})["customer_id"] = customer_id
+        for tc in tool_calls:
+            tc["args"] = _clean_args(tc.get("args"))
+            if tc.get("name") in CUSTOMER_TOOLS:
+                tc["args"]["customer_id"] = customer_id
+
+        # Booking, modification and cancellation are not executed here: the customer must confirm first.
+        # The LLM's tool call is replaced by a summary written by code (no tool call is left dangling).
+        gated = next((tc for tc in tool_calls if tc.get("name") in GATED_TOOLS), None)
+        if gated:
+            if gated["name"] == "create_reservation" and not _has_booking_intent(messages):
+                return {"messages": [AIMessage(content=NEED_DETAILS)], "pending_action": None}
+            args = {k: v for k, v in (gated.get("args") or {}).items() if k != "customer_id"}
+            error, summary = _build_proposal(gated["name"], args, customer_id)
+            if error:
+                return {"messages": [AIMessage(content=error)], "pending_action": None}
+            return {
+                "messages": [AIMessage(content=summary)],
+                "pending_action": {"tool": gated["name"], "args": args},
+            }
 
         return {"messages": [response]}
 
@@ -88,6 +218,13 @@ def get_graph_app():
         _default_app = build_graph()
     return _default_app
 
+def _execute_pending(pending: Dict[str, Any], customer_id: str, client_type: str) -> str:
+    """Runs the confirmed action through its tool and returns the text for the customer."""
+    reply = TOOLS_BY_NAME[pending["tool"]].invoke({**pending["args"], "customer_id": customer_id})
+    if client_type == "voice":
+        reply = reply.replace("#", "numero ")  # a voice cannot read "#"
+    return reply
+
 def process_message(
     message: str,
     session_id: str,
@@ -102,6 +239,33 @@ def process_message(
     cid = customer_id or f"anon_{session_id}"
 
     config = {"configurable": {"thread_id": session_id}}
+    result_info = {"session_id": session_id, "customer_id": cid, "client_type": client_type}
+
+    # A booking/modification/cancellation is waiting for the customer's answer
+    snapshot = graph_app.get_state(config)
+    pending = (snapshot.values or {}).get("pending_action") if snapshot else None
+    if pending:
+        if is_confirmation(message):
+            reply = _execute_pending(pending, cid, client_type)
+            graph_app.update_state(
+                config,
+                {"messages": [HumanMessage(content=message), AIMessage(content=reply)], "pending_action": None},
+                as_node="agent",
+            )
+            return {"reply": reply, **result_info}
+        # "no", a change ("sì ma alle 21") or any other message: the proposal is dropped and the LLM takes over
+        graph_app.update_state(config, {"pending_action": None}, as_node="agent")
+
+    # Allergies and intolerances: answered by code from the menu, never by the LLM (it invents dishes)
+    allergy_reply = answer_allergy_question(message, client_type)
+    if allergy_reply:
+        graph_app.update_state(
+            config,
+            {"messages": [HumanMessage(content=message), AIMessage(content=allergy_reply)],
+             "session_id": session_id, "customer_id": cid, "client_type": client_type},
+            as_node="agent",
+        )
+        return {"reply": allergy_reply, **result_info}
 
     input_state = {
         "messages": [HumanMessage(content=message)],
@@ -121,9 +285,4 @@ def process_message(
             reply_text = str(msg.content)
             break
 
-    return {
-        "reply": reply_text,
-        "session_id": session_id,
-        "customer_id": cid,
-        "client_type": client_type
-    }
+    return {"reply": reply_text, **result_info}
