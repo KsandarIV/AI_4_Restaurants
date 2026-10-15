@@ -37,7 +37,8 @@ class Settings(BaseModel):
     LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.1"))
     OLLAMA_TIMEOUT_S: float = float(os.getenv("OLLAMA_TIMEOUT_S", "120"))  # a stuck model must not hang the server
     # "thinking" of reasoning models (e.g. gemma4): true/false to force it, empty = model default.
-    # Turning it off makes answers much faster; only set it for models that support thinking.
+    # Turning it off makes answers much faster. "false" is safe with every model; "true" fails on models
+    # that cannot think (e.g. llama3.2: "does not support thinking").
     OLLAMA_REASONING: Optional[bool] = (
         os.getenv("OLLAMA_REASONING", "").strip().lower() in ("true", "1", "yes")
         if os.getenv("OLLAMA_REASONING", "").strip() else None
