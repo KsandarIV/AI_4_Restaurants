@@ -5,17 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Trattoria Bella Napoli</title>
   <meta name="description" content="Cucina campana nel cuore di Napoli. Menu, orari, dove siamo e prenotazione del tavolo in chat o a voce.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,500&family=Lato:wght@400;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="#top">Bella Napoli</a>
+    <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">🍅</span>Bella Napoli <small>dal 1987</small></a>
     <nav>
       <a href="#chi-siamo">Chi siamo</a>
       <a href="#menu">Menu</a>
       <a href="#dove">Dove siamo</a>
       <a href="#contatti">Contatti</a>
-      <a href="#staff">Area staff</a>
+      <a href="staff.html">Area staff</a>
     </nav>
     <button class="btn btn-small" data-open-assistant>Prenota</button>
   </header>
@@ -37,9 +40,9 @@
       <h2>Chi siamo</h2>
       <p>Dal 1987 serviamo i piatti della tradizione napoletana con materie prime del territorio. Tre ambienti: la sala interna, la terrazza e il giardino estivo. Ogni tavolo è libero per un turno di 90 minuti, così più persone possono sedersi alla nostra tavola.</p>
       <ul class="features">
-        <li><strong>3 ambienti</strong><span>sala, terrazza, giardino</span></li>
-        <li><strong>Senza glutine</strong><span>e opzioni vegetariane e vegane</span></li>
-        <li><strong>Per tutti</strong><span>accesso disabili, seggioloni, animali ammessi</span></li>
+        <li><span class="ico" aria-hidden="true">🏡</span><strong>3 ambienti</strong><span>sala, terrazza, giardino</span></li>
+        <li><span class="ico" aria-hidden="true">🌿</span><strong>Senza glutine</strong><span>e opzioni vegetariane e vegane</span></li>
+        <li><span class="ico" aria-hidden="true">🤝</span><strong>Per tutti</strong><span>accesso disabili, seggioloni, animali ammessi</span></li>
       </ul>
     </section>
 
@@ -97,6 +100,8 @@
   </main>
 
   <footer class="footer">
+    <p class="footer-brand">🍅 Bella Napoli</p>
+    <p class="footer-tag">Cucina campana dal 1987</p>
     <p><span data-info="name">Trattoria Bella Napoli</span> · <span data-info="address">Via Toledo 142, Napoli</span></p>
     <p class="footer-staff"><a href="staff.html">Area ristoratore</a></p>
   </footer>
