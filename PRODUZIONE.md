@@ -11,21 +11,27 @@ riepilogo dei requisiti della traccia, la 6 la scaletta per le due presentazioni
 | **CHAT** | `chat/` (Streamlit) | `streamlit run chat/app.py` | 8501 | spaCy `it_core_news_md` |
 | **VOICE** | `voice/` (pipeline vocale) | `python -m voicebot` | 8003 | Whisper (STT) e Piper (TTS) |
 
+Il **frontend** (`frontend/`, sito del ristorante) è un quarto elemento: il browser parla con il BE (menu, orari), con la voce (porta 8003)
+e con il servizio `chat/api.py` sulla porta **8002** per la chat scritta. Quel servizio **non è avviato da `avvia.py`**: sulla macchina CHAT,
+dalla cartella `chat/`, `python -m uvicorn api:app --host 0.0.0.0 --port 8002` (e porta 8002 aperta nel firewall). Istruzioni complete in
+`frontend/README.md`. Secondo la traccia, si sviluppa dopo l'approvazione del responsabile tecnico.
+
 CHAT e VOICE parlano con il BE **solo via rete** (HTTP/WebSocket). L'LLM gira solo sulla macchina BE: è lì che va
-installato Ollama. Per avviare ogni macchina: `python lan\machine_setup.py` (vedi `lan/README.md`), il BE per primo.
+installato Ollama. Per avviare ogni macchina: `python entrypoint\avvia.py` (vedi `entrypoint/README.md`): aggiorna il codice, fa il setup,
+chiede il ruolo una volta, scrive il `.env`, apre il firewall e avvia il componente. Il BE per primo.
 
 ## 2. Preparazione (una volta)
 
 - [ ] Le pull request dei branch `Lavalle-fix` (BE) e `BELLOMO` (chat) sono unite nel `main`.
-- [ ] Sulle tre macchine: `git pull origin main` (con `origin main`: un `git pull` semplice dà errore per i branch
-      `SAVOV` e `savov`, che su Windows hanno lo stesso nome).
+- [ ] Sulle tre macchine il codice è aggiornato: lo fa da solo `python entrypoint\avvia.py` (`git pull --ff-only`); a mano:
+      `git pull origin main`. Sulla tua cartella di lavoro, se compare l'errore `cannot lock ref`, una volta `git fetch --prune`.
 - [ ] Le tre macchine sono sulla **stessa rete**. Annota l'IP di ciascuna (`ipconfig`, "Indirizzo IPv4"):
       BE = ________  CHAT = ________  VOICE = ________
-- [ ] Firewall di Windows: porte **8000** (BE), **8501** (CHAT), **8003** (VOICE) in ingresso. Lo script di setup
-      stampa i comandi `netsh`.
+- [ ] Firewall di Windows: porte **8000** (BE), **8501** (CHAT), **8003** (VOICE) in ingresso. `avvia.py` crea la regola
+      della porta del ruolo, oppure stampa il comando `netsh` da lanciare come amministratore.
 - [ ] Sulla macchina BE: `ollama list` mostra un modello con "tools" (`gemma4:12b`, oppure `gemma4-coder`, `llama3.2`).
       Il BE sceglie da solo il primo disponibile e lo scrive nel log.
-- [ ] Sulla macchina CHAT: dopo `python setup\setup_env.py` il modello spaCy e `phonenumbers` sono installati. Controllo:
+- [ ] Sulla macchina CHAT: dopo `python entrypoint\avvia.py` (che lancia `setup\setup_env.py`) il modello spaCy e `phonenumbers` sono installati. Controllo:
       `.venv\Scripts\python.exe -c "import spacy, phonenumbers; spacy.load('it_core_news_md'); print('ok')"`.
 
 ## 3. Impostazioni della macchina BE (file `.env` nella radice)
@@ -40,7 +46,8 @@ Elenco completo: README, sezione "Sicurezza, area del ristoratore e manutenzione
 
 ## 4. Prova generale (spunta ogni voce)
 
-1. [ ] **BE acceso.** Da *un'altra* macchina apri `http://<IP_BE>:8000/api/health`: `"status":"online"`.
+1. [ ] **BE acceso.** Da *un'altra* macchina apri `http://<IP_BE>:8000/api/health`: `"status":"online"`. Lo stato di tutte e tre:
+       `python entrypoint\avvia.py --status`.
 2. [ ] **Qualità del modello.** Sulla macchina BE: `python -m backend.check_model` → 8/8 verifiche superate.
 3. [ ] **Chat dal browser di un'altra macchina**, `http://<IP_CHAT>:8501`, nella barra laterale l'indirizzo del BE:
    - [ ] registrazione (nome e telefono in un solo messaggio) e conferma
@@ -67,7 +74,7 @@ Per ripartire con un database pulito: spegni il BE e cancella `backend\restauran
 
 | Requisito | Come è soddisfatto | Come si dimostra |
 |---|---|---|
-| Tre componenti su macchine diverse | `lan/machine_setup.py` assegna un ruolo a ogni PC | Prova generale, punti 1-3 |
+| Tre componenti su macchine diverse | `entrypoint/avvia.py` (che usa `lan/`) assegna un ruolo a ogni PC | Prova generale, punti 1-3 |
 | Comunicazione solo via rete | HTTP/WebSocket verso il BE, nessun file condiviso | Le tre macchine non condividono cartelle |
 | Modelli in locale | Ollama (BE), spaCy (chat), Whisper e Piper (voce) | Nessuna chiave API, funziona senza internet |
 | Casi d'uso: prenotare, modificare, cancellare, menu, informazioni | Chat completa; voce in sviluppo | Prova generale, punto 3 |
@@ -108,7 +115,7 @@ Per ripartire con un database pulito: spegni il BE e cancella `backend\restauran
 - **Dati personali**: nome e telefono sono conservati in chiaro nel database (conservazione limitata a 90 giorni con
   `python -m backend.maintenance purge`). Per un uso reale serve un parere sul trattamento dei dati personali.
 - **Setup della macchina CHAT**: il passo "Dipendenze Python" di `setup/setup_env.py` ora installa `phonenumbers` e
-  scarica il modello spaCy; va eseguito di nuovo (`git pull`, poi `python setup\setup_env.py`) sulle macchine già configurate.
+  scarica il modello spaCy; va rieseguito (basta rilanciare `python entrypoint\avvia.py`) sulle macchine già configurate.
 
 ## 8. Se qualcosa non va
 
@@ -118,6 +125,8 @@ Per ripartire con un database pulito: spegni il BE e cancella `backend\restauran
 | La chat dice "Il modello linguistico non risponde" (503) | Ollama spento o nessun modello con "tools" installato: `ollama list` |
 | `/api/health` è `degraded` | Il dettaglio è nei campi `database`, `llm_reachable`, `llm_model_available` |
 | `/api/staff` dice "disabilitata" | Manca `STAFF_API_KEY` nel `.env` del BE |
-| Il chatbot non parte: `No module named 'phonenumbers'` / modello spaCy mancante | Rilanciare `python setup\setup_env.py` sulla macchina CHAT |
+| Il chatbot non parte: `No module named 'phonenumbers'` / modello spaCy mancante | Rilanciare `python entrypoint\avvia.py` sulla macchina CHAT |
+| `avvia.py` si ferma su `git pull` | Modifiche locali o conflitti: `git status`; non forzare, chiedere al gruppo |
+| Il sito (frontend) non risponde nella chat | Il servizio `chat/api.py` (porta 8002) non è avviato: lo avvia a parte, vedi sotto |
 | Prima risposta molto lenta | Ollama carica il modello: è normale solo la prima volta, il BE lo riscalda all'avvio |
 | `git pull` dà `cannot lock ref SAVOV` | Usare `git pull origin main` |
