@@ -11,10 +11,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from backend.api.schemas import ClosureRequest, MenuItemUpdate
+from backend.api.schemas import ClosureRequest, MenuItemUpdate, StaffReservationUpdate
 from backend.config import settings
 from backend.database import crud
 from backend.database.connection import get_db
+from backend.database.models import Reservation
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 
@@ -40,6 +41,43 @@ def staff_reservations(
 ) -> List[Dict[str, Any]]:
     response.headers["Cache-Control"] = "no-store"  # personal data: never kept by browsers or proxies
     return crud.list_reservations_for_staff(db, date=date, status=status)
+
+
+def _owner_of(db: Session, booking_code: str) -> str:
+    """customer_id that owns a booking. The staff acts on behalf of the owner: crud checks the owner, not the staff."""
+    res = db.query(Reservation).filter(Reservation.booking_code == booking_code.strip().upper()).first()
+    if res is None:
+        raise HTTPException(status_code=404, detail=f"Prenotazione {booking_code} non trovata.")
+    return res.customer_id
+
+
+@router.patch("/reservations/{booking_code}", dependencies=[Depends(require_staff_key)], summary="Modifica una prenotazione (data, ora, persone, note)")
+def staff_modify_reservation(booking_code: str, request: StaffReservationUpdate, db: Session = Depends(get_db)):
+    result = crud.modify_reservation(
+        db, booking_code,
+        new_date=request.new_date, new_time=request.new_time,
+        new_guests=request.new_guests, new_requests=request.new_requests,
+        customer_id=_owner_of(db, booking_code),
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Errore nella modifica della prenotazione."))
+    return result
+
+
+@router.delete("/reservations/{booking_code}", dependencies=[Depends(require_staff_key)], summary="Cancella una prenotazione")
+def staff_cancel_reservation(booking_code: str, db: Session = Depends(get_db)):
+    result = crud.cancel_reservation(db, booking_code, customer_id=_owner_of(db, booking_code))
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Errore nella cancellazione."))
+    return result
+
+
+@router.get("/menu", dependencies=[Depends(require_staff_key)], summary="Tutto il menu, compresi i piatti esauriti")
+def staff_menu(db: Session = Depends(get_db)):
+    return [
+        {"id": m["id"], "category": m["category"], "name": m["name"], "price": m["price"], "available": m.get("available", True)}
+        for m in crud.get_menu_items(db, only_available=False)
+    ]
 
 
 @router.get("/closures", dependencies=[Depends(require_staff_key)], summary="Giorni di chiusura straordinaria")

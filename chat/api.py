@@ -24,6 +24,8 @@ from contatti import MESSAGGIO_INIZIALE, Registrazione
 BE_URL = os.getenv("BE_URL", "http://localhost:8000").rstrip("/")
 TIMEOUT_SECONDI = 120  # l'LLM locale può essere lento
 MAX_SESSIONI = 500
+INATTIVA_SECONDI = 600  # una sessione usata negli ultimi 10 minuti non viene mai tolta
+VUOTA_SECONDI = 60  # una sessione senza nessun messaggio si può togliere dopo 1 minuto
 MESSAGGIO_BENVENUTO = (
     "Registrazione completata. Come posso aiutarla? Posso prenotare, modificare o cancellare un tavolo, "
     "mostrarle il menu o darle informazioni sul locale."
@@ -43,6 +45,7 @@ class Sessione:
         self.registrazione = Registrazione()
         self.fase = "registrazione"  # poi "chat"
         self.ultimo_uso = time.time()
+        self.messaggi = 0  # quanti messaggi ha mandato l'utente (0 = sessione creata e mai usata)
 
 
 class MessaggioIn(BaseModel):
@@ -111,9 +114,24 @@ def gestisci_registrazione(sessione, testo):
 
 
 def _pulisci_sessioni():
+    """Libera posto solo togliendo sessioni inattive, mai quelle di chi sta scrivendo.
+
+    Se non c'è nulla da togliere, rifiuta la nuova sessione (503): così chi crea sessioni a vuoto
+    non può far perdere la conversazione agli altri utenti.
+    """
+    if len(sessioni) < MAX_SESSIONI:
+        return
+    ora = time.time()
+
+    def eliminabile(s):
+        inattiva = ora - s.ultimo_uso
+        return inattiva > INATTIVA_SECONDI or (s.messaggi == 0 and inattiva > VUOTA_SECONDI)
+
+    candidate = sorted((sid for sid, s in sessioni.items() if eliminabile(s)), key=lambda sid: sessioni[sid].ultimo_uso)
+    for sid in candidate[: MAX_SESSIONI // 5]:
+        del sessioni[sid]
     if len(sessioni) >= MAX_SESSIONI:
-        for sid in sorted(sessioni, key=lambda s: sessioni[s].ultimo_uso)[: MAX_SESSIONI // 5]:
-            del sessioni[sid]
+        raise HTTPException(status_code=503, detail="Il servizio è molto richiesto in questo momento. Riprova tra qualche minuto.")
 
 
 @app.get("/health")
@@ -135,6 +153,7 @@ def messaggio(richiesta: MessaggioIn):
     if sessione is None:
         raise HTTPException(status_code=404, detail="Sessione scaduta: avvia una nuova conversazione.")
     sessione.ultimo_uso = time.time()
+    sessione.messaggi += 1
 
     if sessione.fase == "registrazione":
         return {"reply": gestisci_registrazione(sessione, richiesta.text), "phase": sessione.fase}
