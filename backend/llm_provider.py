@@ -224,8 +224,12 @@ def get_llm(provider: Optional[str] = None) -> BaseChatModel:
     logger.info(
         f"Using local ChatOllama with model='{settings.OLLAMA_MODEL}' at {settings.OLLAMA_BASE_URL}"
     )
+    options = {}
+    if settings.OLLAMA_REASONING is not None:
+        options["reasoning"] = settings.OLLAMA_REASONING
     return ChatOllama(
         model=settings.OLLAMA_MODEL,
         base_url=settings.OLLAMA_BASE_URL,
-        temperature=settings.LLM_TEMPERATURE
+        temperature=settings.LLM_TEMPERATURE,
+        **options
     )

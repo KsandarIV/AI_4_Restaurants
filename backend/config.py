@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Optional
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -27,6 +28,12 @@ class Settings(BaseModel):
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
     LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.1"))
+    # "thinking" of reasoning models (e.g. gemma4): true/false to force it, empty = model default.
+    # Turning it off makes answers much faster; only set it for models that support thinking.
+    OLLAMA_REASONING: Optional[bool] = (
+        os.getenv("OLLAMA_REASONING", "").strip().lower() in ("true", "1", "yes")
+        if os.getenv("OLLAMA_REASONING", "").strip() else None
+    )
 
     # Restaurant metadata & business shifts
     RESTAURANT_NAME: str = "Trattoria Bella Napoli"

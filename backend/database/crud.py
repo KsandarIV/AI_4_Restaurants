@@ -189,6 +189,32 @@ def get_available_tables(
     available = [t for t in candidate_tables if t.id not in busy_table_ids]
     return available
 
+def validate_reservation_request(db: Session, date: str, time: str, guests: int, customer_id: str) -> Tuple[Optional[str], str]:
+    """Checks every rule that does not depend on table availability.
+
+    Shared by create_reservation and by the confirmation step of the conversation, so a booking
+    that cannot be made is never proposed to the customer. Returns (error_message or None, shift).
+    """
+    date_ok, date_err, _ = validate_date(date)
+    if not date_ok:
+        return date_err, "fuori_orario"
+
+    time_ok, time_err, shift = validate_time_and_shift(time)
+    if not time_ok:
+        return time_err, shift
+
+    if guests <= 0 or guests > 20:
+        return (
+            f"Numero di ospiti ({guests}) non valido. Per gruppi superiori a 20 persone vi preghiamo di contattarci telefonicamente.",
+            shift
+        )
+
+    # The customer must have registered name and phone first (the LLM only ever sees the token)
+    if settings.REQUIRE_CUSTOMER_REGISTRATION and not is_registered_customer(db, customer_id):
+        return "Per prenotare serve prima la registrazione del nome e del numero di telefono.", shift
+
+    return None, shift
+
 def create_reservation(
     db: Session,
     date: str,
@@ -201,32 +227,10 @@ def create_reservation(
     """
     Create a new reservation in the database with concurrency lock and strict validations.
     """
-    # 1. Validate date
-    date_ok, date_err, _ = validate_date(date)
-    if not date_ok:
-        return {"success": False, "error": date_err}
-
-    # 2. Validate time and shift
-    time_ok, time_err, shift = validate_time_and_shift(time)
-    if not time_ok:
-        return {"success": False, "error": time_err}
-
-    # 3. Validate party size
-    if guests <= 0 or guests > 20:
-        return {
-            "success": False,
-            "error": f"Numero di ospiti ({guests}) non valido. Per gruppi superiori a 20 persone vi preghiamo di contattarci telefonicamente."
-        }
-
-    # Clean customer_id
     cid = (customer_id or "anon_client").strip()
-
-    # 4. The customer must have registered name and phone first (the LLM only ever sees the token)
-    if settings.REQUIRE_CUSTOMER_REGISTRATION and not is_registered_customer(db, cid):
-        return {
-            "success": False,
-            "error": "Per prenotare serve prima la registrazione del nome e del numero di telefono."
-        }
+    error, shift = validate_reservation_request(db, date, time, guests, cid)
+    if error:
+        return {"success": False, "error": error}
 
     # Thread-safe table allocation
     with table_lock:
