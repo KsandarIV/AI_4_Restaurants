@@ -35,6 +35,7 @@
     }
     const data = await r.json().catch(() => ({}));
     if (r.status === 401) { const err = new Error("Chiave non valida."); err.auth = true; throw err; }
+    if (r.status === 405 || (r.status === 404 && !data.detail)) throw new Error("Il BE in esecuzione non ha questa funzione: riavvialo con la versione aggiornata del codice.");
     if (!r.ok) throw new Error(data.detail || "Errore del server (" + r.status + ").");
     return data;
   }

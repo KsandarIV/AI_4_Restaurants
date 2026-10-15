@@ -189,6 +189,9 @@ python -m backend.check_model                  :: sulla macchina BE: 8 prove sul
 | `GET` / `POST` | `/api/staff/closures` | Elenco / nuova chiusura straordinaria `{date, reason}` (le prenotazioni già fatte **non** vengono cancellate: la risposta le elenca) |
 | `DELETE` | `/api/staff/closures/{data}` | Riapre il ristorante in quella data |
 | `PATCH` | `/api/staff/menu/{id}` | `{available: false}` = piatto esaurito (sparisce dal menu); oppure cambia il prezzo |
+| `GET` | `/api/staff/menu` | Tutto il menu, compresi i piatti esauriti (serve a riattivarli) |
+| `PATCH` | `/api/staff/reservations/{codice}` | Modifica data, ora, persone o note `{new_date, new_time, new_guests, new_requests}` di qualsiasi cliente (stessi controlli di tavoli e orari) |
+| `DELETE` | `/api/staff/reservations/{codice}` | Cancella la prenotazione di qualsiasi cliente |
 
 Nome e telefono compaiono **solo** qui: mai nelle risposte destinate ai clienti né al modello.
 
