@@ -5,8 +5,13 @@ Lo stesso script gira sulle 3 macchine: capisce da solo quale componente avviare
 Risoluzione ruolo (prima fonte valida vince):
   1. flag --role be|chat|voice
   2. variabile d'ambiente LAN_ROLE
-  3. file lan/role.local.json (scritto al primo avvio interattivo, NON in git)
-  4. domanda interattiva (poi salvata in role.local.json)
+  3. file lan/macchina.json (identita' di questa macchina: ruolo + IP auto-rilevato)
+  4. file legacy lan/role.local.json
+  5. domanda interattiva (poi salvata in macchina.json)
+
+Prima esecuzione su una macchina: `machine_setup.py --sono` (o rispondi alla
+domanda) -> da li' in poi tutto automatico, IP compreso.
+`--pubblica-ip` scrive il proprio IP nel lan_config.json condiviso (solo se statici).
 
 Flusso completo (default, senza flag):
   setup venv condiviso -> configura .env (IP del BE) -> firewall (istruzioni)
@@ -33,7 +38,8 @@ LAN_DIR = Path(__file__).resolve().parent
 ROOT = LAN_DIR.parent
 SETUP_DIR = ROOT / "setup"
 CONFIG_FILE = LAN_DIR / "lan_config.json"
-ROLE_FILE = LAN_DIR / "role.local.json"
+ROLE_FILE = LAN_DIR / "role.local.json"  # legacy, ancora letto come fallback
+IDENTITY_FILE = LAN_DIR / "macchina.json"  # identità di QUESTA macchina (mai in git)
 ENV_FILE = ROOT / ".env"
 ENV_EXAMPLE = ROOT / ".env.example"
 
@@ -56,13 +62,14 @@ def resolve_role(cli_role: str | None) -> str:
     if env_role in ROLES:
         log(f"ruolo da variabile LAN_ROLE={env_role}")
         return env_role
-    try:
-        saved = str(json.loads(ROLE_FILE.read_text(encoding="utf-8")).get("role", "")).lower()
+    for path in (IDENTITY_FILE, ROLE_FILE):
+        try:
+            saved = str(json.loads(path.read_text(encoding="utf-8")).get("role", "")).lower()
+        except (OSError, ValueError):
+            continue
         if saved in ROLES:
-            log(f"ruolo da {ROLE_FILE.name}: {saved}")
+            log(f"ruolo da {path.name}: {saved}")
             return saved
-    except (OSError, ValueError):
-        pass
     print("[lan] Questa macchina quale componente ospita?")
     for i, role in enumerate(ROLES, 1):
         print(f"  {i}. {role}")
@@ -78,6 +85,120 @@ def resolve_role(cli_role: str | None) -> str:
             log(f"ruolo salvato in lan/{ROLE_FILE.name} (file locale, non committare)")
             return role
         print("[lan] scelta non valida.")
+
+
+def get_own_ip() -> str:
+    """Rileva l'IP LAN di QUESTA macchina (solo stdlib, nessun traffico inviato).
+
+    Strategia: socket UDP "connesso" (nessun pacchetto parte) verso gateway
+    tipici per capire quale interfaccia uscirebbe; fallback su hostname.
+    Scarta loopback e link-local. Ritorna "" se non rilevabile.
+    """
+    import socket
+
+    candidates: list[str] = []
+    for target in ("8.8.8.8", "192.168.1.1", "10.0.0.1"):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.connect((target, 80))
+            candidates.append(str(sock.getsockname()[0]))
+        except OSError:
+            pass
+        finally:
+            sock.close()
+    try:
+        _, _, addrs = socket.gethostbyname_ex(socket.gethostname())
+        candidates.extend(addrs)
+    except OSError:
+        pass
+    for ip in candidates:
+        if ip.startswith("127.") or ip.startswith("169.254.") or ":" in ip:
+            continue
+        return ip
+    return ""
+
+
+def load_identity() -> dict[str, str]:
+    try:
+        data = json.loads(IDENTITY_FILE.read_text(encoding="utf-8"))
+        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_identity(identity: dict[str, str]) -> None:
+    IDENTITY_FILE.write_text(json.dumps(identity, indent=2), encoding="utf-8")
+
+
+def ensure_identity(role: str) -> dict[str, str]:
+    """Crea/aggiorna lan/macchina.json: ruolo + IP auto-rilevato (+ nome opzionale).
+
+    Prima esecuzione: chiede 'chi sei' (se ruolo non noto) e propone l'IP rilevato
+    (invio = conferma, oppure digitazione manuale). Poi tutto e' automatico.
+    """
+    identity = load_identity()
+    changed = False
+    if identity.get("role") != role:
+        identity["role"] = role
+        changed = True
+    detected = get_own_ip()
+    if not identity.get("host") or identity.get("host") != detected:
+        if detected and sys.stdin.isatty() and not ASSUME_IP:
+            try:
+                answer = input(f"[lan] IP di questa macchina [{detected}]: ").strip()
+                identity["host"] = answer or detected
+            except EOFError:
+                identity["host"] = detected
+        else:
+            identity["host"] = detected or identity.get("host", "")
+        changed = True
+    if "nome" not in identity and sys.stdin.isatty() and not ASSUME_IP:
+        try:
+            nome = input("[lan] nome macchina (es. PC-BE, facoltativo) []: ").strip()
+            if nome:
+                identity["nome"] = nome
+                changed = True
+        except EOFError:
+            pass
+    if changed:
+        save_identity(identity)
+        log(f"identita' salvata in lan/{IDENTITY_FILE.name}: {identity}")
+    else:
+        log(f"identita' nota: {identity}")
+    return identity
+
+
+ASSUME_IP = False
+
+
+def effective_hosts(config: dict[str, object], identity: dict[str, str]) -> dict[str, str]:
+    """Mappa ruolo -> host EFFETTIVO: per il proprio ruolo vale l'IP auto-rilevato."""
+    hosts: dict[str, str] = {}
+    for role in ROLES:
+        node = config[role]
+        assert isinstance(node, dict)
+        hosts[role] = str(node.get("host", ""))
+    if identity.get("role") in ROLES and identity.get("host"):
+        hosts[identity["role"]] = identity["host"]
+    return hosts
+
+
+def publish_ip(config: dict[str, object], identity: dict[str, str]) -> bool:
+    """Scrive l'IP rilevato nel lan_config.json CONDIVISO (opt-in esplicito).
+
+    Utile una tantum per fissare IP statici; con DHCP meglio di no (vedi README).
+    """
+    role = identity.get("role", "")
+    host = identity.get("host", "")
+    if role not in ROLES or not host:
+        log("ERRORE: identità incompleta, niente da pubblicare.")
+        return False
+    node = config[role]
+    assert isinstance(node, dict)
+    node["host"] = host
+    CONFIG_FILE.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    log(f"pubblicato in lan_config.json: {role}.host = {host} (da committare con git)")
+    return True
 
 
 def ensure_repo_root() -> bool:
@@ -119,15 +240,20 @@ def configure_env(role: str, config: dict[str, object], be_host: str | None) -> 
     """
     be = config["be"]
     assert isinstance(be, dict)
-    host = be_host or str(be.get("host", "192.168.1.10"))
+    ident = load_identity()
+    host = be_host or ident.get("be_host") or str(be.get("host", "192.168.1.10"))
     port = int(be.get("port", 8000))
-    if be_host is None and sys.stdin.isatty():
+    if be_host is None and not ident.get("be_host") and sys.stdin.isatty():
         try:
             answer = input(f"[lan] IP LAN della macchina BE [{host}]: ").strip()
             if answer:
                 host = answer
         except EOFError:
             pass
+    if ident.get("be_host") != host:
+        ident["be_host"] = host
+        save_identity(ident)
+        log(f"IP BE ricordato in lan/{IDENTITY_FILE.name} (non servira' richiederlo)")
     values = read_env()
     values["HOST"] = "0.0.0.0"
     values["BACKEND_BASE_URL"] = f"http://{host}:{port}"
@@ -244,21 +370,50 @@ def check_one(name: str, base: str, path: str, timeout: int = 5) -> tuple[str, s
         return ("KO", f"{type(exc).__name__}: {exc}")
 
 
-def cmd_status(config: dict[str, object], be_override: str | None = None) -> int:
-    """Ping HTTP alle 3 macchine e stampa la tabella di stato LAN."""
+def cmd_status(
+    config: dict[str, object],
+    be_override: str | None = None,
+    identity: dict[str, str] | None = None,
+) -> int:
+    """Ping HTTP alle 3 macchine e stampa la tabella di stato LAN.
+
+    Se stessi via 127.0.0.1 (il componente locale deve rispondere in locale),
+    il BE via IP ricordato/flag/config, gli altri via lan_config.json.
+    """
+    identity = identity or {}
+    own = identity.get("role", "")
+    hosts = effective_hosts(config, identity)
     print("\n[lan] stato LAN:")
     print(f"{'ruolo':<7} {'indirizzo':<28} {'stato':<5} dettaglio")
     all_ok = True
     for role in ROLES:
         node = config[role]
         assert isinstance(node, dict)
-        host = be_override if (role == "be" and be_override) else str(node.get("host"))
+        if role == "be":
+            host = be_override or identity.get("be_host") or hosts["be"]
+        elif role == own:
+            host = "127.0.0.1"
+        else:
+            host = hosts[role]
         base = f"http://{host}:{int(node.get('port', 0))}"
         status, detail = check_one(role, base, str(node.get("health", "/health")))
         all_ok = all_ok and status == "OK"
         print(f"{role:<7} {base:<28} {status:<5} {detail}")
     print("[lan] TUTTO OK" if all_ok else "[lan] qualcosa non risponde: vedi dettaglio sopra")
     return 0 if all_ok else 1
+
+
+def cmd_show(config: dict[str, object], identity: dict[str, str]) -> int:
+    """Mostra chi sono io e chi sono gli altri (mappa effettiva)."""
+    hosts = effective_hosts(config, identity)
+    print("\n[lan] mappa effettiva:")
+    for role in ROLES:
+        node = config[role]
+        assert isinstance(node, dict)
+        tag = "  <-- QUESTA MACCHINA" if role == identity.get("role") else ""
+        print(f"  {role:<6} {hosts[role]:<16} :{node.get('port')}{tag}")
+    print(f"  BE per .env: {identity.get('be_host', hosts['be'])}")
+    return 0
 
 
 def cmd_write_launcher(role: str) -> int:
@@ -288,14 +443,28 @@ def main(argv: list[str] | None = None) -> int:
                         help="chat/voice: non attendere il BE prima di avviare")
     parser.add_argument("--wait-timeout", type=int, default=180,
                         help="secondi max di attesa BE (default 180)")
+    parser.add_argument("--sono", action="store_true",
+                        help="identifica questa macchina (ruolo+IP) senza domande e senza avviare")
+    parser.add_argument("--mostra-identita", action="store_true",
+                        help="mostra chi sono io e gli altri (mappa effettiva) ed esci")
+    parser.add_argument("--pubblica-ip", action="store_true",
+                        help="scrive il mio IP nel lan_config.json condiviso (solo IP statici!) ed esci")
     args = parser.parse_args(argv)
+    global ASSUME_IP
 
     config = load_config()
     if args.status:
-        return cmd_status(config, args.be_host)
+        return cmd_status(config, args.be_host, load_identity())
     if not ensure_repo_root():
         return 1
     role = resolve_role(args.role)
+    if args.sono:
+        ASSUME_IP = True
+    identity = ensure_identity(role)
+    if args.sono or args.mostra_identita:
+        return cmd_show(config, identity)
+    if args.pubblica_ip:
+        return 0 if publish_ip(config, identity) else 1
     if args.write_launcher:
         return cmd_write_launcher(role)
     if not args.start:
