@@ -28,6 +28,7 @@
         <p class="lead" data-i18n="hero_lead"></p>
         <div class="hero-actions">
           <button class="btn" data-open-assistant data-i18n="book_by_voice"></button>
+          <button class="btn btn-ghost" type="button" data-open-chat data-i18n="book_by_chat"></button>
           <a class="btn btn-ghost" href="#prenotazioni" data-i18n="check_reservations"></a>
         </div>
       </div>
@@ -89,26 +90,25 @@
     <p><span data-info="name">Trattoria Bella Napoli</span> · <span data-info="address">Via Toledo 142, Napoli</span> · <a href="/prova-vocale" style="color:inherit">pagina di test</a></p>
   </footer>
 
-  <button id="assistant-fab" class="fab" data-open-assistant><span aria-hidden="true">🎙️</span> <span data-i18n="book_by_voice"></span></button>
+  <div class="dock">
+    <button id="chat-fab" class="fab fab-chat" type="button" data-open-chat><span aria-hidden="true">💬</span> <span data-i18n="chat_button"></span></button>
+    <button id="assistant-fab" class="fab" type="button" data-open-assistant><span aria-hidden="true">🎙️</span> <span data-i18n="book_by_voice"></span></button>
+    <canvas id="orb" width="520" height="520" role="button" tabindex="0" hidden data-i18n-aria="orb_aria"></canvas>
+  </div>
+  <p id="orb-note" class="orb-note" role="alert" hidden></p>
+  <span id="state" class="state-line" aria-live="polite"></span>
 
-  <section id="assistant" class="assistant" role="dialog" hidden data-i18n-aria="assistant_title">
+  <section id="chat-panel" class="chat-panel" role="dialog" hidden data-i18n-aria="chat_title">
     <header class="assistant-head">
-      <div>
-        <strong data-i18n="assistant_title"></strong>
-        <small id="assistant-status">—</small>
-      </div>
-      <button id="assistant-close" class="icon-btn" data-i18n-aria="close">✕</button>
+      <strong data-i18n="chat_title"></strong>
+      <button id="chat-close" class="icon-btn" type="button" data-i18n-aria="close">✕</button>
     </header>
-    <div id="insecure" class="warn" hidden></div>
-    <div class="orb-wrap">
-      <canvas id="orb" width="520" height="520" role="button" tabindex="0" data-i18n-aria="orb_aria"></canvas>
-      <p id="state" class="state-line"></p>
-    </div>
-    <div id="chat-log" class="log" aria-live="polite"></div>
-    <div class="assistant-foot">
-      <button id="reset" class="link-btn" type="button" data-i18n="new_conversation"></button>
-      <button id="hangup" class="link-btn" type="button" data-i18n="hang_up"></button>
-    </div>
+    <div id="chat-msgs" class="log" aria-live="polite"></div>
+    <form id="chat-form" class="composer" autocomplete="off">
+      <input id="chat-input" type="text" maxlength="2000" data-i18n-placeholder="chat_placeholder" data-i18n-aria="chat_placeholder">
+      <button class="btn btn-small" type="submit" data-i18n="chat_send"></button>
+    </form>
+    <button id="chat-reset" class="link-btn" type="button" data-i18n="new_conversation"></button>
   </section>
 
   <aside id="toast" class="toast" role="status" aria-live="polite" hidden>

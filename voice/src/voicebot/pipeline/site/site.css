@@ -134,10 +134,19 @@ a { color: var(--accent); }
 
 /* orb: the animation speaks for itself, the state line stays only for screen readers */
 .state-line { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-/* the live transcript is shown only in the local test (class set by app.js) */
-.assistant:not(.show-log) .log { display: none; }
-.assistant:not(.show-log) { height: auto; }
-.assistant:not(.show-log) .assistant-foot { padding-top: 6px; }
+/* bottom-right dock: chat button + voice button; the voice button turns into the orb during a call */
+.dock { position: fixed; right: 20px; bottom: 20px; z-index: 30; display: flex; gap: 10px; align-items: flex-end; }
+.dock .fab { position: static; }
+.fab-chat { background: var(--surface); color: var(--accent); border: 2px solid var(--accent); box-shadow: var(--shadow); }
+.fab-chat:hover { background: var(--accent); color: #fff; }
+.dock #orb { width: 180px; height: 180px; cursor: pointer; border-radius: 50%; -webkit-tap-highlight-color: transparent; }
+.dock #orb[hidden], .dock .fab[hidden] { display: none !important; }
+.orb-note { position: fixed; right: 20px; bottom: 84px; z-index: 31; max-width: min(320px, calc(100vw - 40px)); margin: 0; padding: 10px 14px; background: #fdecea; color: #8a2615; border: 1px solid #f0c4bd; border-radius: 14px; font-family: system-ui, sans-serif; font-size: .85rem; }
+.orb-note[hidden] { display: none !important; }
+.chat-panel { position: fixed; right: 20px; bottom: 84px; z-index: 40; width: min(400px, calc(100vw - 24px)); height: min(520px, calc(100vh - 110px)); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; font-family: system-ui, sans-serif; }
+.chat-panel[hidden] { display: none !important; }
+.chat-panel .assistant-head { justify-content: space-between; }
+@media (max-width: 720px) { .chat-panel { right: 0; bottom: 0; width: 100vw; height: 100dvh; border-radius: 0; } }
 
 /* booking summary pop-up */
 .toast { position: fixed; left: 24px; bottom: 24px; z-index: 60; min-width: 250px; max-width: min(340px, calc(100vw - 32px)); padding: 16px 20px 18px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-left: 6px solid var(--accent); border-radius: 18px; box-shadow: var(--shadow); font-family: system-ui, sans-serif; animation: toast-in .28s ease-out; }

@@ -19,6 +19,7 @@ bookings, allergy answers and registration checks. The voice bot only adds ears 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 import uuid
 from collections.abc import AsyncIterator
@@ -32,9 +33,15 @@ from .interfaces import AbstractLLMOrchestrator, ChatMessage
 from .logging_json import get_logger
 from .messages import normalize_language, say
 from .prompts import build_system_prompt
+from .toolguard import NUDGE, first_sentence_done, leaks_tool_talk
 from .spoken import spoken_area, spoken_date, spoken_location, spoken_number, spoken_time
 
 log = get_logger("orchestrator")
+
+# Every unregistered caller shares this id: the BE writes the customer id into the LLM's system prompt, so a
+# different id per call would make the LLM re-read its whole prompt (about a minute on a weak CPU) at every call.
+# It identifies nobody: an anonymous id cannot book, change or cancel.
+ANON_CUSTOMER_ID = "anon_voice"
 
 _BOOKING_CODE = re.compile(r"\bRES-[A-Z0-9]{4,10}\b")
 
@@ -84,7 +91,7 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
     def _start(self) -> None:
         self.session_id = f"voice_{uuid.uuid4().hex[:8]}"
         # Replaced by the BE's id once the customer is registered (like chat/api.py).
-        self.customer_id = f"anon_{uuid.uuid4().hex[:6]}"
+        self.customer_id = ANON_CUSTOMER_ID
         self.anonymizer = Anonymizer(use_model=self._use_ner)
         self.dialog = RegistrationDialog(self._language)
         self.phase = Phase.CHAT  # registration starts only when the caller wants to book
@@ -132,8 +139,17 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         self._exchanges += 1
         anonymized = await self._anonymize(user_text)
         try:
-            data = await self._backend.chat(anonymized, self.session_id, self.customer_id)
-            text = self.anonymizer.restore(str(data["reply"]))
+            text = ""
+            for attempt in (0, 1):  # a reply that talks about tools is dropped and asked again, once
+                data = await self._backend.chat(
+                    anonymized if attempt == 0 else anonymized + NUDGE, self.session_id, self.customer_id
+                )
+                text = self.anonymizer.restore(str(data["reply"]))
+                if not leaks_tool_talk(text):
+                    break
+                log.warning("tool talk in the reply, attempt=%d", attempt + 1)
+            else:
+                text = say(self._language, "retry_request")
             report = await self._final_report(text)
             if report:
                 text = f"{text} {report}"
@@ -160,20 +176,61 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
     async def _backend_stream(self, user_text: str) -> AsyncIterator[str]:
         self._exchanges += 1
         anonymized = await self._anonymize(user_text)
-        restorer = self.anonymizer.stream_restorer()
         spoken: list[str] = []
         try:
-            async for token in self._backend.stream_chat(
-                anonymized, self.session_id, self.customer_id, system_prompt=self._system
-            ):
-                text = restorer.feed(token)
-                if text:
-                    spoken.append(text)
-                    yield text
-            tail = restorer.flush()
-            if tail:
-                spoken.append(tail)
-                yield tail
+            for attempt in (0, 1):  # a reply that talks about tools is dropped and asked again, once
+                restorer = self.anonymizer.stream_restorer()
+                head: list[str] = []  # the start of the reply is held back until it is known to be clean
+                vetted = leaked = False
+                message = anonymized if attempt == 0 else anonymized + NUDGE
+                stream = self._backend.stream_chat(
+                    message, self.session_id, self.customer_id, system_prompt=self._system
+                )
+                try:
+                    async for token in stream:
+                        text = restorer.feed(token)
+                        if not text:
+                            continue
+                        if vetted:
+                            spoken.append(text)
+                            yield text
+                            continue
+                        head.append(text)
+                        joined = "".join(head)
+                        if first_sentence_done(joined):
+                            if leaks_tool_talk(joined):
+                                leaked = True
+                                break
+                            vetted = True
+                            for piece in head:  # release the held-back start, token by token
+                                spoken.append(piece)
+                                yield piece
+                finally:
+                    closer = getattr(stream, "aclose", None)
+                    if closer is not None:
+                        with contextlib.suppress(Exception):
+                            await closer()
+                if not leaked:
+                    tail = restorer.flush()
+                    if vetted:
+                        if tail:
+                            spoken.append(tail)
+                            yield tail
+                    else:  # a short reply: judged as a whole
+                        joined = "".join(head) + tail
+                        if joined and leaks_tool_talk(joined):
+                            leaked = True
+                        elif joined:
+                            for piece in [*head, tail] if tail else head:
+                                spoken.append(piece)
+                                yield piece
+                if not leaked:
+                    break
+                log.warning("tool talk in the reply, attempt=%d", attempt + 1)
+            else:
+                fallback = say(self._language, "retry_request")
+                spoken.append(fallback)
+                yield fallback
             if not spoken:  # the BE answered with an empty stream
                 raise BackendError("empty reply", kind="format")
             report = await self._final_report("".join(spoken))

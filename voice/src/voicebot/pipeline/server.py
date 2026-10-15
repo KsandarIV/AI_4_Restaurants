@@ -25,7 +25,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from ..backend import BackendClient, BackendError
@@ -33,7 +33,7 @@ from ..config import Settings, get_settings
 from ..diagnostics import collect_diagnostics
 from ..interfaces import AbstractLLMOrchestrator, AbstractSTT, AbstractTTS
 from ..logging_json import get_logger, setup_logging
-from ..orchestrator import BackendOrchestrator
+from ..orchestrator import ANON_CUSTOMER_ID, BackendOrchestrator
 from ..stt import build_stt
 from ..tts import build_tts
 from ..vad import build_vad
@@ -104,7 +104,7 @@ async def warm_backend(settings: Settings) -> None:
         chat_timeout_s=max(settings.backend_chat_timeout_s, 300.0),
     )
     try:
-        await backend.chat("Buongiorno", "voice_warmup", "anon_warmup")
+        await backend.chat("Buongiorno", "voice_warmup", ANON_CUSTOMER_ID)
         log.info("backend warmed up")
     except BackendError as exc:
         log.info("backend warm-up skipped kind=%s status=%s", exc.kind, exc.status)
@@ -262,15 +262,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse({"detail": "invalid request"}, status_code=400)
         return await _be_get(f"/api/reservations/{code.upper()}", {"customer_id": customer_id})
 
-    @app.get("/prova-vocale", response_class=HTMLResponse, include_in_schema=False)
-    async def voice_page() -> str:
-        """The live test page. In local mode (stub BE) it always carries the VOICE / TESTS banner."""
-        return _page("voice_test.html", settings.mode == "local", settings.backend_base_url)
-
-    @app.get("/prova-vocale-test", response_class=HTMLResponse, include_in_schema=False)
-    async def voice_test_page() -> str:
-        """Same page, always with the banner that shows which BE this instance talks to."""
+    @app.get("/test-voice", response_class=HTMLResponse, include_in_schema=False)
+    async def test_voice_page() -> str:
+        """The live test page: always carries the banner that shows which BE this instance talks to."""
         return _page("voice_test.html", True, settings.backend_base_url)
+
+    for old_route in ("/prova-vocale", "/prova-vocale-test"):  # the old addresses keep working
+        app.add_api_route(
+            old_route, (lambda: RedirectResponse("/test-voice")), methods=["GET"], include_in_schema=False,
+        )
+
+    async def _chat_proxy(path: str, body: dict[str, Any]) -> Response:
+        """The site's chat window: forwards to the CHAT service (chat/api.py) when CHAT_SERVICE_URL is set."""
+        if not settings.chat_service_url:
+            return JSONResponse({"detail": "Il servizio chat non è collegato a questo server."}, status_code=503)
+        try:
+            async with httpx.AsyncClient(timeout=130.0) as client:
+                resp = await client.post(settings.chat_service_url.rstrip("/") + path, json=body)
+        except httpx.HTTPError:
+            return JSONResponse({"detail": "Non riesco a contattare il servizio chat."}, status_code=502)
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {"detail": "Risposta non valida dal servizio chat."}
+        return JSONResponse(data, status_code=resp.status_code)
+
+    @app.post("/site/chat/session", include_in_schema=False)
+    async def site_chat_session() -> Response:
+        return await _chat_proxy("/chat/session", {})
+
+    @app.post("/site/chat/message", include_in_schema=False)
+    async def site_chat_message(payload: dict[str, Any]) -> Response:
+        session_id, text = str(payload.get("session_id", ""))[:80], str(payload.get("text", ""))[:2000]
+        if not session_id or not text.strip():
+            return JSONResponse({"detail": "invalid request"}, status_code=400)
+        return await _chat_proxy("/chat/message", {"session_id": session_id, "text": text})
 
     for route, name in (("/tech", "tech.html"), ("/tech-codice", "tech_codice.html"),
                         ("/tech-idea", "tech_idea.html")):

@@ -69,6 +69,7 @@ class StubState:
         self.chat_payloads: list[dict[str, Any]] = []
         self.fail_chat_status = 0  # >0: /api/chat and /api/chat/stream answer this status
         self.chat_delay_s = 0.0  # simulated LLM latency before answering
+        self.canned_replies: list[str] = []  # tests: answer these (in order) instead of the scripted agent
 
 
 def _parse_booking(message: str) -> dict[str, Any]:
@@ -109,6 +110,8 @@ def _owned(state: StubState, code: str, customer: str | None) -> dict[str, Any] 
 
 def _converse(state: StubState, body: dict[str, Any], message: str) -> str:
     """The stub "LLM": registration rule + confirmation protocol like the real agent."""
+    if state.canned_replies:
+        return state.canned_replies.pop(0)
     session = str(body.get("session_id", "stub_sess"))
     customer = str(body.get("customer_id") or "anon_stub")
     low = message.lower()

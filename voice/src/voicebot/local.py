@@ -53,7 +53,7 @@ def run_local(fake: bool = False, port: int = 0, open_browser: bool = True) -> i
     settings = local_settings(be_url, voice_port, fake)
     setup_logging(settings.log_level)
     base = f"http://localhost:{voice_port}"
-    url = f"{base}/prova-vocale-test"
+    url = f"{base}/test-voice"
     print("=" * 70)
     print(" VOICE v1 LIVE - LOCAL TEST   (WebSocket, VAD, barge-in; BE = stub)")
     print(f"   TEST PAGE (opens now)  : {url}")
@@ -63,7 +63,7 @@ def run_local(fake: bool = False, port: int = 0, open_browser: bool = True) -> i
     print("   tap the orb, allow the microphone, then say:")
     print("     'Mario Rossi, 333 1234567'  ->  'sì'  ->  'vorrei prenotare un tavolo per due persone domani alle 21'  ->  'sì'")
     print("   side tabs: TECNICA (sheets) and STATO (checks + events).  Stop: Ctrl+C")
-    print("   (the same page against the REAL BE on the LAN: 'voice real' -> /prova-vocale)")
+    print("   (the same page against the REAL BE on the LAN: 'voice real' -> /test-voice)")
     print("=" * 70, flush=True)
     app = create_app(settings)
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=voice_port, ws="auto",

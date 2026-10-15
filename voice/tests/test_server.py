@@ -84,7 +84,7 @@ async def test_health_ready_and_diag_endpoints() -> None:
             assert {"name", "status", "detail", "hint"} <= set(diag["checks"][0])
             names = {c["name"] for c in diag["checks"]}
             assert {"python", "backend", "registration", "tts", "stt", "models"} <= names
-            assert (await client.get("/prova-vocale")).status_code == 200
+            assert (await client.get("/test-voice")).status_code == 200
 
 
 async def test_ready_reports_unreachable_backend() -> None:

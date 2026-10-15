@@ -75,9 +75,8 @@ class Settings(BaseSettings):
     voice_language: Literal["it", "en"] = Field(default="it")
     # Same switch the BE has: registration (name + phone) before any booking.
     require_registration: bool = Field(default=True)
-    # v2 only: when set, drive the CHAT service (chat/api.py, e.g. http://host:8002)
-    # instead of talking to the BE directly. Off by default: the brief says the
-    # bots talk to the BE only.
+    # When set (e.g. http://host:8002): the site's chat window and the v2 mode drive the CHAT service
+    # (chat/api.py) instead of the BE directly. Empty = the chat window answers "not connected".
     chat_service_url: str = Field(default="")
     # Empty = use the built-in Italian agent prompt (voicebot.prompts).
     llm_system_prompt: str = Field(default="")

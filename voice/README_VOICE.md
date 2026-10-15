@@ -13,17 +13,18 @@ side tabs TECNICA and STATO):
 
 | I want to… | Command (from the repo root) | Opens |
 |---|---|---|
-| **Test v1 locally** — stub BE, nothing else needed | `voiceoice local`  (`--fake` = no speech models, page/flow only) | `/prova-vocale-test`: banner **VOICE / TESTS — BE in uso: stub** |
-| **Test v1 against the real BE on the LAN** (one component) | `voiceoice real`  then open `http://localhost:8003/prova-vocale` | `/prova-vocale`: no banner, real BE |
-| **The full three-machine flow**, as always | `python entrypointvvia.py`  (pull, setup, firewall, waits for the BE, starts `python -m voicebot`) | same pages on the VOICE machine |
-| Find out why something does not work | `voiceoice doctor`  (also the STATO tab) | |
-| v2: voice chat from this PC, no browser, one question = one answer | `voiceoice v2`  (`--text` = type instead of speak) | |
-| Live call from this PC without browser | `voiceoice live ws://<voice-host>:8003/ws/voice` | |
-| Run the tests | `voiceoice test` | |
+| **Test v1 locally** — stub BE, nothing else needed | `voice\voice local`  (`--fake` = no speech models, page/flow only) | `/test-voice`: banner **VOICE / TESTS — BE in uso: stub** |
+| **Test v1 against the real BE on the LAN** (one component) | `voice\voice real`  then open `http://localhost:8003/test-voice` | `/test-voice`: banner shows the real BE in use |
+| **The full three-machine flow**, as always | `python entrypoint\avvia.py`  (pull, setup, firewall, waits for the BE, starts `python -m voicebot`) | same pages on the VOICE machine |
+| Find out why something does not work | `voice\voice doctor`  (also the STATO tab) | |
+| v2: voice chat from this PC, no browser, one question = one answer | `voice\voice v2`  (`--text` = type instead of speak) | |
+| Live call from this PC without browser | `voice\voice live ws://<voice-host>:8003/ws/voice` | |
+| Run the tests | `voice\voice test` | |
 
-`voiceoice` is `voiceoice.bat`; the same commands work as `python -m voicebot <command>`.
-Both pages are served by the same server: the test page at `/prova-vocale` (`-test` = always with the
-banner) and the restaurant site at `/`. In local mode `/prova-vocale` also carries the banner.
+`voice\voice` is `voice\voice.bat`; the same commands work as `python -m voicebot <command>`.
+Both pages are served by the same server and talk to the same BE (`BACKEND_BASE_URL`): the restaurant site at `/`
+and the test page at `/test-voice` (technical tabs, live transcript, events, always with the banner that names the BE
+in use). The old addresses `/prova-vocale` and `/prova-vocale-test` redirect to `/test-voice`.
 
 The test page is the original one — liquid orb with its animations, **TECNICA** tab (technical sheets) and
 **STATO** tab (voice / microphone / WebSocket / BE / model + every check with its fix + latest events) —
@@ -34,7 +35,10 @@ when you interrupt.
 
 Open `http://localhost:8003/` (local mode prints the exact address). It has the restaurant look of
 `frontend/` (copied stylesheet): menu with filters, hours/address/phone from the BE, the voice
-assistant (orb, live transcript, "new conversation", "hang up") and **My reservations**:
+assistant and **My reservations**. Bottom right there are two buttons: **Scrivi** (the chat bot) and **Prenota a voce**;
+the voice button turns into the orb while the call lasts (tap the orb to hang up; no panel, no transcript: that is on
+`/test-voice`). The chat window goes through `/site/chat/*` to the CHAT service and answers "non è collegato" unless
+`CHAT_SERVICE_URL` is set.
 
 - every booking made, changed or cancelled by voice appears there with its **live status**
   (`Confirmed` / `Cancelled`) read from the BE;
@@ -44,7 +48,7 @@ assistant (orb, live transcript, "new conversation", "hang up") and **My reserva
 - the page never talks to the BE directly: `/site/menu`, `/site/info`, `/site/reservation/{code}` go
   through the voice server. Page language follows `VOICE_LANGUAGE` (it/en).
 
-Its assistant uses the same liquid orb as the test page. Other pages: `/prova-vocale` (+ `/tech`, `/tech-codice`, `/tech-idea`, `/diag`).
+The orb is the same liquid orb as the test page. Other pages: `/test-voice` (+ `/tech`, `/tech-codice`, `/tech-idea`, `/diag`).
 
 ## The spoken final report
 
@@ -111,7 +115,7 @@ voice/
 │       ├── session.py       # ★ core loop: 3 asyncio tasks + bounded queues + barge-in
 │       ├── server.py        # FastAPI: /health /ready /diag /ws/voice + test pages
 │       ├── site/            # the site: index.html, app.js, site.css (look copied from frontend/)
-│       └── *.html           # /prova-vocale (diagnostic page), /tech*
+│       └── *.html           # /test-voice (diagnostic page), /tech*
 └── tests/                   # 150+ tests, no models and no network needed
 ```
 
@@ -151,6 +155,9 @@ the next turns take ~3 s. So:
   the machine that runs the BE (and `OLLAMA_TIMEOUT_S=300` for the very first turn).
 - **Warm-up** (`WARM_BACKEND=true`): at start-up the voice server sends one throw-away turn to the BE
   (session `voice_warmup`, customer `anon_warmup`), so the first caller does not pay the ~70 s.
+- **Shared anonymous id**: the BE writes the customer id and the date at the top of the LLM's prompt, so every new id
+  re-reads the whole prompt. All unregistered callers therefore use `anon_voice` (it identifies nobody and cannot book), and
+  the warm-up pays the prompt once. A caller's first turn after registration (their own id) is still slow on a weak CPU.
 - **Context management** (the BE keeps the dialogue as the LLM's context): every `CONTEXT_MAX_EXCHANGES` (20) BE turns
   without reaching a booking the bot starts a **fresh BE session** and says "sto gestendo molte richieste…, ripartiamo da
   capo: una prenotazione o una modifica?" (the customer stays registered: nobody repeats name or phone). The 3rd refresh adds
@@ -158,6 +165,11 @@ the next turns take ~3 s. So:
   sentence, then hangs up) until the caller taps the orb again. Reaching a booking resets the counters, and the caller's final
   "yes" starts a fresh session, so the next request begins with an empty context. `CONTEXT_MAX_RESETS` (3) is the number of
   refreshes before the end.
+
+**Tool talk filter** (`toolguard.py`): a small model sometimes answers "devo prima chiamare get_menu, vuole che verifichi?" instead of
+using the tool. The first sentence of every BE reply is held back until it is judged (tool names, "I must call...", "vuole che
+verifichi..."); if it leaks, the reply is dropped, the turn is retried once with an instruction to use the tools silently, and if it
+leaks again the caller hears "non sono riuscito a recuperare questa informazione, può ripetere?". The prompt says the same.
 
 ## Core loop (producer–consumer)
 
@@ -208,7 +220,7 @@ REM terminal 1: a stub BE with the real contract (registration, confirmation flo
 REM terminal 2: the voice bot pointed at it (real models; add STT_BACKEND=fake TTS_BACKEND=fake to skip them)
 set BACKEND_BASE_URL=http://127.0.0.1:8001
 .venv\Scripts\python -m voicebot.doctor
-.venv\Scripts\python -m voicebot            REM then open http://localhost:8003/prova-vocale
+.venv\Scripts\python -m voicebot            REM then open http://localhost:8003/test-voice
 .venv\Scripts\python -m voicebot.v2 --text  REM or chat by keyboard, hear the replies
 ```
 

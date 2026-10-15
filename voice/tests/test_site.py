@@ -32,12 +32,12 @@ async def test_the_site_is_served_with_its_assets() -> None:
     async with stub_be() as (url, _), site_client(url) as client:
         page = await client.get("/")
         assert page.status_code == 200 and "Trattoria Bella Napoli" in page.text
-        for element in ('id="menu-list"', 'id="res-list"', 'id="lookup-code"', 'id="orb"', 'id="chat-log"'):
+        for element in ('id="menu-list"', 'id="res-list"', 'id="lookup-code"', 'id="orb"', 'id="chat-panel"'):
             assert element in page.text
         assert "/site-assets/app.js" in page.text and "/site-assets/site.css" in page.text
         for asset in ("app.js", "site.css"):
             assert (await client.get(f"/site-assets/{asset}")).status_code == 200
-        assert (await client.get("/prova-vocale")).status_code == 200  # the diagnostic page is still there
+        assert (await client.get("/test-voice")).status_code == 200  # the test page
 
 
 async def test_site_config_tells_the_page_language_and_mode() -> None:
@@ -92,15 +92,59 @@ def test_the_site_assistant_has_the_same_liquid_orb_as_the_test_page() -> None:
         assert needle in js, needle
 
 
-async def test_the_test_page_shows_the_banner_when_running_against_the_stub() -> None:
+async def test_the_test_page_is_test_voice_and_the_old_addresses_redirect() -> None:
     async with stub_be() as (url, _):
-        local = create_app(local_settings(url, 8013, fake=True))
-        live = create_app(Settings(backend_base_url=url))
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=local), base_url="http://v") as c1:
-            assert "VOICE / TESTS" in (await c1.get("/prova-vocale")).text
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=live), base_url="http://v") as c2:
-            assert "VOICE / TESTS" not in (await c2.get("/prova-vocale")).text
-            assert "VOICE / TESTS" in (await c2.get("/prova-vocale-test")).text
+        for app in (create_app(local_settings(url, 8013, fake=True)), create_app(Settings(backend_base_url=url))):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://v") as client:
+                page = await client.get("/test-voice")
+                assert page.status_code == 200 and "VOICE / TESTS" in page.text and url in page.text
+                for old in ("/prova-vocale", "/prova-vocale-test"):
+                    moved = await client.get(old)
+                    assert moved.status_code in (302, 307) and moved.headers["location"] == "/test-voice"
+
+
+def test_the_voice_button_turns_into_the_orb_without_a_panel() -> None:
+    html = (SITE / "index.html").read_text(encoding="utf-8")
+    js = (SITE / "app.js").read_text(encoding="utf-8")
+    assert 'id="assistant"' not in html and 'id="hangup"' not in html and 'id="chat-log"' not in html
+    assert 'id="orb"' in html and 'id="chat-fab"' in html and "function showOrb" in js and "function startCall" in js
+    assert 'logLine(' not in js  # no transcript on the site: it lives on /test-voice
+
+
+async def test_the_chat_window_is_not_connected_without_a_chat_service_and_proxies_when_it_is() -> None:
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class FakeChat(BaseHTTPRequestHandler):
+        def log_message(self, *args: object) -> None:
+            pass
+
+        def do_POST(self) -> None:  # noqa: N802
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            out = ({"session_id": "s1", "reply": "Buongiorno dal chat bot"} if self.path == "/chat/session"
+                   else {"reply": "eco: " + body["text"]})
+            raw = json.dumps(out).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+    chat = ThreadingHTTPServer(("127.0.0.1", 0), FakeChat)
+    threading.Thread(target=chat.serve_forever, daemon=True).start()
+    try:
+        async with stub_be() as (url, _):
+            async with site_client(url) as client:  # no CHAT_SERVICE_URL
+                refused = await client.post("/site/chat/session")
+                assert refused.status_code == 503 and "non è collegato" in refused.json()["detail"]
+            async with site_client(url, chat_service_url=f"http://127.0.0.1:{chat.server_port}") as client:
+                assert (await client.post("/site/chat/session")).json()["session_id"] == "s1"
+                reply = await client.post("/site/chat/message", json={"session_id": "s1", "text": "ciao"})
+                assert reply.json()["reply"] == "eco: ciao"
+                assert (await client.post("/site/chat/message", json={"session_id": "s1", "text": " "})).status_code == 400
+    finally:
+        chat.shutdown()
 
 
 def test_the_site_talks_to_this_server_only_and_handles_every_event() -> None:
@@ -108,8 +152,8 @@ def test_the_site_talks_to_this_server_only_and_handles_every_event() -> None:
     for needle in ("/site/menu", "/site/info", "/site/reservation/", "/site/config", "/ws/voice", "localStorage",
                    "customer_id", "setTimeout(connect", "Math.min(500 * 2 ** retry"):
         assert needle in js
-    for event in ("ready", "loading", "heard", "transcript", "thinking", "reply", "barge_in",
-                  "registered", "reservation", "error"):
+    for event in ("ready", "loading", "heard", "thinking", "reply", "barge_in", "registered", "reservation",
+                  "reservation_confirmed", "call_ended", "error"):
         assert f'case "{event}"' in js
     assert "10.10." not in js and "192.168." not in js  # no hard-coded machine addresses
 
@@ -169,7 +213,7 @@ def test_orb_has_no_halo_or_hint_text_has_the_golden_ring_and_the_popup_closes_b
     assert ".state-line { position: absolute" in css  # the state text is only for screen readers
     assert "TOAST_MS = 4000" in js and 'case "reservation_confirmed"' in js
     assert 'id="toast"' in html and "<button" not in html.split('id="toast"')[1].split("</aside>")[0]  # no way to click it away
-    assert '.assistant:not(.show-log) .log { display: none; }' in css and 'classList.add("show-log")' in js
+    assert ".dock #orb" in css  # the orb sits where the voice button was
 
 
 def test_the_test_page_has_the_same_golden_ring_and_popup() -> None:

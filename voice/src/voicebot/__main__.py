@@ -55,7 +55,7 @@ def serve() -> None:
         settings.voice_port, settings.backend_base_url, settings.voice_language,
         settings.stt_backend, settings.tts_backend, settings.require_registration,
     )
-    log.info("test page: http://localhost:%d/prova-vocale  |  site: http://localhost:%d/  |  `python -m voicebot doctor` explains any problem",
+    log.info("test page: http://localhost:%d/test-voice  |  site: http://localhost:%d/  |  `python -m voicebot doctor` explains any problem",
              settings.voice_port, settings.voice_port)
     uvicorn.run(
         "voicebot.pipeline.server:create_default_app",
@@ -85,7 +85,7 @@ def real(wait_s: float) -> None:
         print(f"[voice] {check['status'].upper():<4} {check['name']}: {check['detail']}")
         if check["hint"] and check["status"] != "ok":
             print(f"[voice]      -> {check['hint']}")
-    print(f"[voice] test page: http://localhost:{settings.voice_port}/prova-vocale   site: http://localhost:{settings.voice_port}/")
+    print(f"[voice] test page: http://localhost:{settings.voice_port}/test-voice   site: http://localhost:{settings.voice_port}/")
     if not be["ok"]:
         print("[voice] The BE is not reachable: starting anyway, calls will say so. "
               "Fix BACKEND_BASE_URL / start the BE, then `python -m voicebot doctor`.")

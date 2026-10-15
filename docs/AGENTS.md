@@ -35,4 +35,4 @@ cd voice && ..\..venv\Scripts\python -m pytest tests -q
 ## 4. Porte e salute (non cambiarle senza accordo a tre)
 
 BE 8000 (`/api/health`) · sito 8080 (`/`) · chat 8501 (`/_stcore/health`) ·
-chat-api 8002 (`/health`) · voice 8003 (`/health`, WS `/ws/voice`, test `/prova-vocale`, tech `/tech`).
+chat-api 8002 (`/health`) · voice 8003 (`/health`, WS `/ws/voice`, test `/test-voice`, tech `/tech`).

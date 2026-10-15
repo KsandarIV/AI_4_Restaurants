@@ -48,6 +48,7 @@ _IT: dict[str, str] = {
     "err_registration_unsupported": "Il server non supporta ancora la registrazione dei clienti.",
     "err_registration_rejected": "Il server ha rifiutato la registrazione.",
     "didnt_hear": "Non ho sentito bene, può ripetere?",
+    "retry_request": "Mi scusi, non sono riuscito a recuperare questa informazione. Può ripetere la richiesta?",
     "context_reset": (
         "Mi scusi{call}sto gestendo molte richieste in questo momento, quindi ripartiamo da capo. "
         "Mi dice che cosa desidera fare: una prenotazione o una modifica?"
@@ -112,6 +113,7 @@ _EN: dict[str, str] = {
     "err_registration_unsupported": "The server does not support customer registration yet.",
     "err_registration_rejected": "The server rejected the registration.",
     "didnt_hear": "I did not hear that well, could you repeat?",
+    "retry_request": "Sorry, I could not retrieve that information. Could you repeat the request?",
     "context_reset": (
         "Sorry{call}I am handling many requests right now, so let us start over. "
         "What would you like to do: a booking or a change?"

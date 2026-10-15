@@ -40,6 +40,9 @@
       new_conversation: "Nuova conversazione", hang_up: "Termina",
       toast_confirmed: "Prenotazione confermata", toast_updated: "Prenotazione aggiornata",
       toast_guests: "{n} persone", toast_guest_one: "1 persona",
+      chat_button: "Scrivi", book_by_chat: "Prenota in chat", chat_title: "Assistente in chat",
+      chat_placeholder: "Scrivi qui il tuo messaggio…", chat_send: "Invia",
+      chat_unreachable: "Il servizio chat non è disponibile in questo momento.",
       st_off: "Tocca il cerchio per parlare", st_connecting: "Mi collego…", st_loading: "Carico i modelli vocali…",
       st_listening: "Ti ascolto… fai una pausa quando hai finito", st_heard: "Ok…", st_thinking: "Ci penso…",
       st_speaking: "Parlo… puoi interrompermi", st_retry: "Connessione persa: riprovo tra {s} s…",
@@ -75,6 +78,9 @@
       new_conversation: "New conversation", hang_up: "Hang up",
       toast_confirmed: "Booking confirmed", toast_updated: "Booking updated",
       toast_guests: "{n} guests", toast_guest_one: "1 guest",
+      chat_button: "Chat", book_by_chat: "Book by chat", chat_title: "Chat assistant",
+      chat_placeholder: "Type your message here…", chat_send: "Send",
+      chat_unreachable: "The chat service is not available right now.",
       st_off: "Tap the circle to talk", st_connecting: "Connecting…", st_loading: "Loading the speech models…",
       st_listening: "Listening… pause when you are done", st_heard: "Got it…", st_thinking: "Thinking…",
       st_speaking: "Speaking… you can interrupt", st_retry: "Connection lost: retrying in {s} s…",
@@ -235,44 +241,23 @@
   let playQ = [], playing = false, ttsRate = 22050, level = 0, mode = "idle", ripples = [];
   const orb = $("orb"), g = orb.getContext("2d");
 
-  function setState(key, vars) { $("state").textContent = t(key, vars); }
-  function logLine(who, text) {
-    const m = el("div", "msg " + who, text);
-    $("chat-log").append(m);
-    m.scrollIntoView({ block: "nearest" });
+  const note = $("orb-note");
+  function showNote(text) { note.textContent = text; note.hidden = !text; }
+  function setState(key, vars) {
+    const text = t(key, vars);
+    $("state").textContent = text;  // read by screen readers only: the orb explains itself
+    showNote(key === "st_error" ? text : "");
   }
-  function setAssistantStatus(ok) {
-    const s = $("assistant-status");
-    s.className = ok ? "ok" : "ko";
-    s.textContent = ok ? t("ok_online") : t("ko_offline");
+  // The "book by voice" button turns into the orb while the call lasts; tapping the orb hangs up.
+  function showOrb(on) { orb.hidden = !on; $("assistant-fab").hidden = on; }
+  function startCall() {
+    if (wantLive) return;
+    if (!window.isSecureContext) { showNote(t("insecure", { p: location.port || "8003", h: location.host })); return; }
+    showNote("");
+    showOrb(true);
+    start();
   }
-  async function checkServer() {
-    try { await getJson("/health"); setAssistantStatus(true); } catch (e) { setAssistantStatus(false); }
-  }
-  function openAssistant() {
-    $("assistant").hidden = false;
-    $("assistant-fab").hidden = true;
-    checkServer();
-    if (!window.isSecureContext) {
-      const w = $("insecure");
-      w.hidden = false;
-      w.textContent = t("insecure", { p: location.port || "8003", h: location.host });
-    }
-    if (!wantLive) setState("st_off");
-  }
-  function closeAssistant() {
-    hangUp();
-    $("assistant").hidden = true;
-    $("assistant-fab").hidden = false;
-  }
-  document.querySelectorAll("[data-open-assistant]").forEach((b) => b.addEventListener("click", openAssistant));
-  $("assistant-close").addEventListener("click", closeAssistant);
-  $("hangup").addEventListener("click", hangUp);
-  $("reset").addEventListener("click", () => {
-    $("chat-log").replaceChildren();
-    stopPlayback();
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cmd: "reset" }));
-  });
+  document.querySelectorAll("[data-open-assistant]").forEach((b) => b.addEventListener("click", startCall));
 
   // liquid orb, same animation as the test page (blob + orbiting dots + ripples + flashes)
   let flash = 0, flashRed = 0;
@@ -432,9 +417,8 @@
         live = true; mode = "listening"; setState("st_listening"); break;
       case "loading": mode = "thinking"; setState("st_loading"); break;
       case "heard": mode = "heard"; setState("st_heard"); break;
-      case "transcript": logLine("user", m.text); break;
       case "thinking": mode = "thinking"; setState("st_thinking"); break;
-      case "reply": logLine("bot", m.text); preparingSince = performance.now(); break;  // the bot is about to speak
+      case "reply": preparingSince = performance.now(); break;  // the bot is about to speak
       case "barge_in": stopPlayback(); preparingSince = 0; flash = 1; mode = "listening"; setState("st_listening"); break;
       case "registered": store.customer_id = m.customer_id; save(store); break;
       case "reservation":
@@ -487,6 +471,7 @@
       source.connect(proc); proc.connect(ctx.destination);
       wantLive = true; retry = 0; setState("st_connecting"); connect();
     } catch (e) {
+      wantLive = false; showOrb(false);
       setState("st_error", { d: String(e) });
     }
   }
@@ -496,10 +481,57 @@
     try { if (ws) ws.close(); } catch (e) { /* closing */ }
     try { if (proc) proc.disconnect(); if (stream) stream.getTracks().forEach((x) => x.stop()); if (ctx) ctx.close(); } catch (e) { /* closing */ }
     ws = proc = stream = ctx = null;
+    showOrb(false);
     if (was) setState("st_ended");
   }
   orb.addEventListener("click", () => { if (wantLive) hangUp(); else start(); });
   orb.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); orb.click(); } });
+
+  // ---------------------------------------------------------------- chat (the chat bot, through this server)
+  // /site/chat/* only forwards to the CHAT service when CHAT_SERVICE_URL is set; otherwise it answers 503.
+  const chatPanel = $("chat-panel"), chatMsgs = $("chat-msgs"), chatInput = $("chat-input");
+  let chatSession = null;
+  function chatLine(who, text) {
+    const m = el("div", "msg " + who, text);
+    chatMsgs.append(m);
+    m.scrollIntoView({ block: "nearest" });
+    return m;
+  }
+  async function chatPost(path, body) {
+    let r;
+    try {
+      r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(body || {}), signal: AbortSignal.timeout(130000) });
+    } catch (e) { throw new Error(t("chat_unreachable")); }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || t("chat_unreachable"));
+    return d;
+  }
+  async function chatStart() {
+    chatMsgs.replaceChildren(); chatSession = null;
+    try { const d = await chatPost("/site/chat/session"); chatSession = d.session_id; chatLine("bot", d.reply); }
+    catch (e) { chatLine("error", e.message); }
+  }
+  function openChat() { chatPanel.hidden = false; if (!chatSession) chatStart(); chatInput.focus(); }
+  document.querySelectorAll("[data-open-chat]").forEach((b) => b.addEventListener("click", openChat));
+  $("chat-close").addEventListener("click", () => { chatPanel.hidden = true; });
+  $("chat-reset").addEventListener("click", chatStart);
+  $("chat-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text) return;
+    chatInput.value = "";
+    chatLine("user", text);
+    const typing = chatLine("bot typing", "…");
+    try {
+      if (!chatSession) { const d = await chatPost("/site/chat/session"); chatSession = d.session_id; }
+      const d = await chatPost("/site/chat/message", { session_id: chatSession, text });
+      typing.remove(); chatLine("bot", d.reply);
+    } catch (e) {
+      typing.remove(); chatLine("error", e.message);
+      if (/scadut|expired/i.test(e.message)) chatSession = null;
+    }
+  });
 
   // ---------------------------------------------------------------- start
   (async function init() {
@@ -507,10 +539,7 @@
     try { cfg = await getJson("/site/config"); } catch (e) { /* defaults */ }
     LANG = cfg.language === "en" ? "en" : "it";
     applyI18n();
-    if (cfg.mode === "local") {
-      const b = $("banner"); b.hidden = false; b.textContent = t("banner_local");
-      $("assistant").classList.add("show-log");  // the live transcript is a test tool: only in local mode
-    }
+    if (cfg.mode === "local") { const b = $("banner"); b.hidden = false; b.textContent = t("banner_local"); }
     renderReservations();
     loadInfo(); loadMenu();
     refreshAll();

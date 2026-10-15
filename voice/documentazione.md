@@ -87,12 +87,12 @@ WS reader ─PCM→ audio_in_q ─→ VAD ─→ segment_q ─→ STT ─→ tex
   through `/site/*` of the voice server; the lookup works only for the registered customer of that browser.
 - **Events to the page:** `registered` (anonymous customer id) and `reservation` (code, date, time, guests,
   status, table, room) next to `transcript`, `reply`, `barge_in`…
-- **Commands:** `voiceoice local` (stub BE, nothing else needed) · `python entrypointvvia.py` (real,
-  three machines) · `voiceoice real|doctor|v2|live|test`; all also as `python -m voicebot <command>`.
+- **Commands:** `voice\voice local` (stub BE, nothing else needed) · `python entrypoint\avvia.py` (real,
+  three machines) · `voice\voice real|doctor|v2|live|test`; all also as `python -m voicebot <command>`.
 
 ## 5. Modes
 
-- **v1 live** — `python -m voicebot`, page `/prova-vocale`, WebSocket `/ws/voice`.
+- **v1 live** — `python -m voicebot`, page `/test-voice`, WebSocket `/ws/voice`.
 - **v2 on-demand** — `python -m voicebot.v2 [--text] [--no-speaker]`: mic → STT → chat conversation
   (`POST /api/chat`) → TTS → speaker. Same engine, no streaming, no WebSocket, no barge-in, so none of the
   live-mode problems (echo, half-duplex audio, VAD tuning, browser mic restrictions). With
@@ -164,6 +164,6 @@ noise (use `VAD_MODE=webrtc`) · speaker echo without headphones/AEC interrupts 
 ```bat
 python setup\setup_env.py
 .venv\Scripts\python -m voicebot.doctor
-.venv\Scripts\python -m voicebot            REM http://localhost:8003/prova-vocale  ·  /tech  ·  /diag
+.venv\Scripts\python -m voicebot            REM http://localhost:8003/test-voice  ·  /tech  ·  /diag
 .venv\Scripts\python -m voicebot.v2         REM voice chat from any PC (local microphone)
 ```

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from tests.helpers import make_orchestrator, make_session, say_to, stub_be, wait_until
+from voicebot.orchestrator import ANON_CUSTOMER_ID
 from voicebot.orchestrator import BackendOrchestrator
 
 BOOKING = "Vorrei prenotare un tavolo"
@@ -94,5 +95,5 @@ async def test_warm_up_sends_one_throwaway_turn_and_never_fails() -> None:
     async with stub_be() as (url, state):
         await warm_backend(Settings(backend_base_url=url))
         assert [p["session_id"] for p in state.chat_payloads] == ["voice_warmup"]
-        assert state.chat_payloads[0]["customer_id"] == "anon_warmup" and not state.customers
+        assert state.chat_payloads[0]["customer_id"] == ANON_CUSTOMER_ID and not state.customers
     await warm_backend(Settings(backend_base_url="http://127.0.0.1:9", backend_timeout_s=1.0))  # BE down: silent

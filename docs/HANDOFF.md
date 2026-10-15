@@ -52,8 +52,8 @@ Attention: `.env` on the VOICE machine may still contain old `LLM_SYSTEM_PROMPT`
 
 ## Handoff 2026-10-15 (night) — VOICE: commands, site, spoken report, from VOICE to team
 Status: done and tested locally (150+ tests, mypy strict, real Whisper/Piper against the stub BE); **three-machine run not yet tried**.
-New: `voiceoice local` = complete local test (stub BE + voice + browser, banner "LOCAL TEST"); the real flow is still
-`python entrypointvvia.py`; also `voiceoice real|doctor|v2|live|test` (= `python -m voicebot <cmd>`).
+New: `voice\voice local` = complete local test (stub BE + voice + browser, banner "LOCAL TEST"); the real flow is still
+`python entrypoint\avvia.py`; also `voice\voice real|doctor|v2|live|test` (= `python -m voicebot <cmd>`).
 New: voice site at `http://VOICE:8003/` (same look as `frontend/`, copied CSS) with the assistant and **My reservations**
 (live status from `GET /api/reservations/{code}?customer_id=`, only the owner can read a code).
 New: after a booking/change/cancellation the bot reads the real data back by voice and asks a last yes
@@ -78,3 +78,14 @@ with an 8k context for weak PCs. Measured on a laptop CPU: first BE turn ~70 s, 
 To do (BE team): in that run the BE answered some turns with text like "Chiamo get_menu con is_vegetarian=true." instead of
 executing the tool (8B model, long prompt) - worth checking `backend/graph`; the BE could also warm its own prompt at start-up and
 set `num_ctx` explicitly.
+New (voice only): `voice/src/voicebot/toolguard.py` drops and retries BE replies that name tools or ask a pointless permission (workaround; the cause is in the BE prompt/model).
+Changed (voice only): the voice site's "Prenota a voce" button now turns into the orb (no panel, no transcript), a "Scrivi" chat window
+was added (proxy `/site/chat/*` to `CHAT_SERVICE_URL`, off here), the test page is `/test-voice` (old `/prova-vocale*` redirect),
+and the command names in these docs (`voice\voice`, `entrypoint\avvia.py`) were restored (control characters had eaten the backslashes).
+To do (BE team), found while measuring on a laptop CPU: `backend/graph/prompts.py` writes the date and the `customer_id` (and the "not registered" block)
+near the TOP of the system prompt, so Ollama's prompt cache is lost at every new customer and every new day: the first turn of a
+customer costs about a minute on a weak CPU, the next ones 1-3 s. Moving the per-customer/per-day lines to the END of the prompt would
+keep the long part (rules + tools) cached. Voice-side workaround: all unregistered callers share the id `anon_voice`, and a start-up warm-up turn
+pays the cost once (`WARM_BACKEND`). Also: some replies announce instead of answer ("Posso mostrarle i piatti...", "Chiamo get_menu...");
+`voice/src/voicebot/toolguard.py` drops and retries them once.
+

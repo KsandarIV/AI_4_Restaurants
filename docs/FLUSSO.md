@@ -17,7 +17,7 @@ Rete: 3 PC sulla stessa LAN (`10.10.x`). Solo HTTP/WebSocket tra macchine, mai i
    │ :8501 Streamlit (UI)    │                    │ :8003 voicebot v1        │
    │ :8002 chat/api.py       │                    │   VAD→STT→LLM(BE)→TTS    │
    │   (il sito sul BE       │                    │   WS /ws/voice + barge-in│
-   │    chiama QUI, mai      │                    │ :8003 /prova-vocale      │
+   │    chiama QUI, mai      │                    │ :8003 /test-voice        │
    │    diretto al BE)       │                    │   pagina test microfono  │
    └─────────────────────────┘                    │ v2 on-demand (mic locale │
                                                   │   via sounddevice, ovunque)│
