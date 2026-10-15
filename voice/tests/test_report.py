@@ -160,3 +160,12 @@ async def test_the_session_forwards_reservation_events_to_the_client() -> None:
         assert "Riepilogo finale" in spoken and "R E S, S T U B 0 1" in spoken
         await session.close()
         await run
+
+
+async def test_whisper_style_time_is_understood_by_the_stub() -> None:
+    """Whisper writes "alle 20 e 30": the report must say 20:30, not 20:00 (found in the real-model run)."""
+    async with stub_be() as (url, _):
+        orch = await _registered(url)
+        await orch.reply("Vorrei prenotare un tavolo per due persone domani alle 20 e 30")
+        assert "alle venti e trenta" in await orch.reply("sì")
+        await orch.aclose()

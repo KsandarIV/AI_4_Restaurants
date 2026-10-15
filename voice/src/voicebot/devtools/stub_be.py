@@ -84,6 +84,8 @@ def _parse_booking(message: str) -> dict[str, Any]:
     hour, minute = 20, 30
     if m := _TIME.search(low):
         hour, minute = int(m.group(1)), int(m.group(2) or 0)
+        if not m.group(2) and re.search(r"alle\s+\d{1,2}\s+e\s+(?:30|trenta|mezza)", low):  # STT: "alle 20 e 30"
+            minute = 30
     else:
         for word, value in _WORD_HOURS.items():
             if re.search(rf"alle\s+{word}\b", low):
