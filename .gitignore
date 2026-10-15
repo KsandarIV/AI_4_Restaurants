@@ -239,3 +239,7 @@ voice/models/
 lan/role.local.json
 lan/macchina.json
 AVVIA_*.bat
+
+# SQLite: file di appoggio del database
+*.db-shm
+*.db-wal
