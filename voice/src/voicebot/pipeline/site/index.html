@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trattoria Bella Napoli — Voice</title>
+  <meta name="description" content="Trattoria Bella Napoli: menu, orari e prenotazione del tavolo a voce.">
+  <link rel="stylesheet" href="/site-assets/site.css">
+</head>
+<body>
+  <div id="banner" class="banner" hidden></div>
+  <header class="topbar">
+    <a class="brand" href="#top">Bella Napoli</a>
+    <nav>
+      <a href="#chi-siamo" data-i18n="nav_about"></a>
+      <a href="#menu" data-i18n="nav_menu"></a>
+      <a href="#prenotazioni" data-i18n="nav_reservations"></a>
+      <a href="#dove" data-i18n="nav_where"></a>
+    </nav>
+    <button class="btn btn-small" data-open-assistant data-i18n="book_by_voice"></button>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-inner">
+        <p class="eyebrow" data-i18n="eyebrow"></p>
+        <h1 data-i18n="hero_title"></h1>
+        <p class="lead" data-i18n="hero_lead"></p>
+        <div class="hero-actions">
+          <button class="btn" data-open-assistant data-i18n="book_by_voice"></button>
+          <a class="btn btn-ghost" href="#prenotazioni" data-i18n="check_reservations"></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="chi-siamo" class="section narrow">
+      <h2 data-i18n="nav_about"></h2>
+      <p data-i18n="about_text"></p>
+      <ul class="features">
+        <li><strong data-i18n="f1_title"></strong><span data-i18n="f1_text"></span></li>
+        <li><strong data-i18n="f2_title"></strong><span data-i18n="f2_text"></span></li>
+        <li><strong data-i18n="f3_title"></strong><span data-i18n="f3_text"></span></li>
+      </ul>
+    </section>
+
+    <section id="menu" class="section">
+      <h2 data-i18n="nav_menu"></h2>
+      <div class="filters" id="menu-filters" role="group"></div>
+      <div id="menu-list" class="menu-list" aria-live="polite" data-i18n="menu_loading"></div>
+      <p class="note" data-i18n="menu_note"></p>
+    </section>
+
+    <section id="prenotazioni" class="section">
+      <h2 data-i18n="nav_reservations"></h2>
+      <p data-i18n="res_intro"></p>
+      <form id="lookup" class="lookup" autocomplete="off">
+        <input id="lookup-code" type="text" maxlength="20" data-i18n-placeholder="lookup_placeholder" aria-label="Codice prenotazione">
+        <button class="btn btn-small" type="submit" data-i18n="lookup_button"></button>
+        <button class="btn btn-small btn-outline" type="button" id="refresh-all" data-i18n="refresh_all"></button>
+      </form>
+      <p id="lookup-msg" class="note" role="status"></p>
+      <div id="res-list" class="res-list" aria-live="polite"></div>
+    </section>
+
+    <section id="dove" class="section">
+      <h2 data-i18n="nav_where"></h2>
+      <div class="two-col">
+        <div>
+          <h3 data-i18n="h_address"></h3>
+          <p data-info="address">—</p>
+          <h3 data-i18n="h_hours"></h3>
+          <p data-info="opening_hours">—</p>
+          <h3 data-i18n="h_parking"></h3>
+          <p data-info="parking">—</p>
+        </div>
+        <div>
+          <h3 data-i18n="h_phone"></h3>
+          <p><a data-info="phone" data-link="tel">—</a></p>
+          <h3 data-i18n="h_services"></h3>
+          <p data-info="services">—</p>
+          <h3 data-i18n="h_payments"></h3>
+          <p data-info="payment_methods">—</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p><span data-info="name">Trattoria Bella Napoli</span> · <span data-info="address">Via Toledo 142, Napoli</span></p>
+  </footer>
+
+  <button id="assistant-fab" class="fab" data-open-assistant><span aria-hidden="true">🎙️</span> <span data-i18n="book_by_voice"></span></button>
+
+  <section id="assistant" class="assistant" role="dialog" hidden data-i18n-aria="assistant_title">
+    <header class="assistant-head">
+      <div>
+        <strong data-i18n="assistant_title"></strong>
+        <small id="assistant-status">—</small>
+      </div>
+      <button id="assistant-close" class="icon-btn" data-i18n-aria="close">✕</button>
+    </header>
+    <div id="insecure" class="warn" hidden></div>
+    <div class="orb-wrap">
+      <canvas id="orb" width="300" height="300" role="button" tabindex="0" data-i18n-aria="orb_aria"></canvas>
+      <p id="state" class="state-line"></p>
+    </div>
+    <div id="chat-log" class="log" aria-live="polite"></div>
+    <div class="assistant-foot">
+      <button id="reset" class="link-btn" type="button" data-i18n="new_conversation"></button>
+      <button id="hangup" class="link-btn" type="button" data-i18n="hang_up"></button>
+    </div>
+  </section>
+
+  <script src="/site-assets/app.js"></script>
+</body>
+</html>

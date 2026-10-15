@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Voice-bot — Scheda tecnica (Traccia 3)</title>
+<title>Voice bot — Technical sheet (Traccia 3)</title>
 <style>
   :root { --ink:#1a1a1a; --mut:#555; --acc:#0b5cad; --bg:#fff; --box:#f4f6f8; }
   body { font-family: Segoe UI, Arial, sans-serif; color:var(--ink); margin:0; background:var(--bg); }
@@ -27,64 +27,64 @@
 </head>
 <body>
 <header>
-  <h1>Voice-bot ristorante — Scheda tecnica</h1>
-  <p>Traccia 3 · membro VOICE · pipeline audio real-time asyncio · modelli 100% locali · solo HTTP verso il BE</p>
+  <h1>Restaurant voice bot — Technical sheet</h1>
+  <p>Traccia 3 · VOICE member · real-time asyncio audio pipeline · 100% local models · HTTP only towards the BE</p>
 </header>
 <div class="toolbar"><main style="padding:0 28px">
-  <button onclick="window.print()">Stampa / Salva PDF</button>
-  <span class="mut">Chrome/Edge → Stampa → "Salva come PDF" per il dossier cliente.</span>
+  <button onclick="window.print()">Print / Save PDF</button>
+  <span class="mut">Chrome/Edge → Print → "Save as PDF" for the customer dossier.</span>
 </main></div>
 <main>
-  <h2>1 · Flusso del codice (core loop)</h2>
-  <svg viewBox="0 0 940 170" role="img" aria-label="pipeline">
+  <h2>1 · Code flow (core loop)</h2>
+  <svg viewBox="0 0 940 190" role="img" aria-label="pipeline">
     <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#0b5cad"/></marker></defs>
     <g font-size="12" text-anchor="middle">
-      <rect x="8" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="68" y="80">WS reader</text><text x="68" y="96" fill="#555">PCM 16kHz</text>
-      <rect x="148" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="208" y="80">VAD</text><text x="208" y="96" fill="#555">Energy/webrtc</text>
-      <rect x="288" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="348" y="80">STT</text><text x="348" y="96" fill="#555">Whisper loc.</text>
-      <rect x="428" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="488" y="80">LLM (BE)</text><text x="488" y="96" fill="#555">token stream</text>
-      <rect x="568" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="628" y="80">TTS</text><text x="628" y="96" fill="#555">Piper loc.</text>
+      <rect x="8" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="68" y="80">WS reader</text><text x="68" y="96" fill="#555">PCM 16 kHz</text>
+      <rect x="148" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="208" y="80">VAD</text><text x="208" y="96" fill="#555">Energy / webrtc</text>
+      <rect x="288" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="348" y="80">STT</text><text x="348" y="96" fill="#555">Whisper (local)</text>
+      <rect x="428" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="488" y="80">Chat engine → BE</text><text x="488" y="96" fill="#555">token stream</text>
+      <rect x="568" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="628" y="80">TTS</text><text x="628" y="96" fill="#555">Piper (local)</text>
       <rect x="708" y="55" width="120" height="60" rx="8" fill="#fff" stroke="#0b5cad" stroke-width="2"/><text x="768" y="80">WS writer</text><text x="768" y="96" fill="#555">PCM out</text>
-      <rect x="848" y="55" width="84" height="60" rx="8" fill="#ffe9e9" stroke="#c00" stroke-width="2"/><text x="890" y="80">barge-in</text><text x="890" y="96" fill="#555">cancella</text>
+      <rect x="848" y="55" width="84" height="60" rx="8" fill="#ffe9e9" stroke="#c00" stroke-width="2"/><text x="890" y="80">barge-in</text><text x="890" y="96" fill="#555">cancels turn</text>
     </g>
     <g stroke="#0b5cad" stroke-width="2">
       <line x1="128" y1="85" x2="146" y2="85" marker-end="url(#a)"/><line x1="268" y1="85" x2="286" y2="85" marker-end="url(#a)"/><line x1="408" y1="85" x2="426" y2="85" marker-end="url(#a)"/><line x1="548" y1="85" x2="566" y2="85" marker-end="url(#a)"/><line x1="688" y1="85" x2="706" y2="85" marker-end="url(#a)"/>
     </g>
-    <text x="470" y="145" font-size="12" fill="#555" text-anchor="middle">code asyncio.Queue bounded (backpressure) · task VAD/STT/LLM · generazione anti-race sul barge-in · PII scrub prima di ogni invio al BE</text>
+    <text x="470" y="150" font-size="12" fill="#555" text-anchor="middle">bounded asyncio.Queue (backpressure) · VAD/STT/LLM tasks · cancellable turn task · generation counter against races</text>
+    <text x="470" y="170" font-size="12" fill="#555" text-anchor="middle">registration phase and anonymisation happen before anything is sent to the BE (same rules as the chat bot)</text>
   </svg>
-  <h2>2 · Modelli e dipendenze</h2>
+  <h2>2 · Models and dependencies</h2>
   <div class="grid">
-    <div class="card"><h3>Modelli (locali)</h3>
-      <p>LLM <code>gemma4:12b</code> via Ollama (macchina BE) · STT faster-whisper <code>tiny</code> ·
-      TTS Piper <code>it_IT-riccardo-x_low</code> (<code>voice/models/</code>) · VAD Energy default.</p></div>
-    <div class="card"><h3>Dipendenze</h3>
-      <p class="mut">Unificate in <code>setup/requirements.txt</code>: fastapi, uvicorn, httpx, pydantic,
-      numpy, faster-whisper, piper-tts, onnxruntime (+ BE: langchain/langgraph/sqlalchemy · CHAT: streamlit/spacy).</p></div>
+    <div class="card"><h3>Models (local)</h3>
+      <p>LLM <code>gemma4:12b</code> via Ollama (BE machine) · STT faster-whisper <code>tiny</code> ·
+      TTS Piper <code>it_IT-riccardo-x_low</code> (<code>voice/models/</code>) · VAD: energy by default.</p></div>
+    <div class="card"><h3>Dependencies</h3>
+      <p class="mut">Per-role files in <code>setup/requirements/</code> (base + voice): fastapi, uvicorn, httpx, pydantic,
+      numpy, phonenumbers, faster-whisper, piper-tts, onnxruntime, sounddevice (optional: spaCy NER).</p></div>
   </div>
-  <h2>3 · Logica chiave</h2>
+  <h2>3 · Key decisions</h2>
   <table>
-    <tr><th>Aspetto</th><th>Scelta</th></tr>
-    <tr><td>Latenza</td><td>Token LLM → TTS in overlap; sintesi per-frase; shortcut tool senza giro LLM</td></tr>
-    <tr><td>Interruzione</td><td>Barge-in: nuova voce invalida turno, svuota coda audio, notifica client</td></tr>
-    <tr><td>Resilienza</td><td>Retry/backoff HTTP, timeout ovunque, code bounded, setup auto-riparante, graceful shutdown</td></tr>
-    <tr><td>Privacy</td><td>Scrub PII lato Voice prima dell'invio; <code>customer_id</code> anonimo verso il BE</td></tr>
-    <tr><td>Contratto BE</td><td><code>POST /api/chat/stream</code> (SSE), availability, CRUD <code>/api/reservations/{booking_code}</code>, <code>/api/menu</code>, <code>/api/info</code></td></tr>
+    <tr><th>Topic</th><th>Choice</th></tr>
+    <tr><td>Behaviour</td><td>Identical to the chat bot: same registration dialogue, same anonymiser, same BE endpoints. No local intent shortcuts: the BE agent decides everything.</td></tr>
+    <tr><td>Latency</td><td>LLM tokens feed the TTS as they arrive; synthesis per sentence; models loaded once at startup and shared by every call.</td></tr>
+    <tr><td>Interruption</td><td>Barge-in: speech longer than <code>BARGE_IN_MIN_MS</code> cancels the running turn, drops queued audio and tells the client; clicks and echo are ignored.</td></tr>
+    <tr><td>Resilience</td><td>Timeouts everywhere, retry/backoff (never replaying a non-idempotent POST), bounded queues, client reconnection with backoff, graceful shutdown.</td></tr>
+    <tr><td>Privacy</td><td>Name and phone go only to <code>POST /api/customers</code>; the LLM sees an anonymous <code>customer_id</code> and <code>[TYPE_N]</code> placeholders; logs never contain what the caller said.</td></tr>
+    <tr><td>BE contract</td><td><code>/api/health</code>, <code>POST /api/customers</code>, <code>POST /api/chat</code>, <code>POST /api/chat/stream</code> (SSE).</td></tr>
   </table>
-  <h2>4 · Punti di forza / deboli</h2>
+  <h2>4 · Strengths / weaknesses</h2>
   <div class="grid">
-    <div class="card"><h3>Forza</h3><p>Voce naturale interrompibile · on-premise (zero costi API, dati in casa) ·
-    resiliente e auto-installante · testabile senza rete (stub BE + 13 test).</p></div>
-    <div class="card"><h3>Deboli e mitigazioni</h3><p>Primo token lento (inferenza BE completa → mitigato con shortcut) ·
-    STT tiny su CPU (upgrade con GPU) · nessuna auth su WS/BE (solo LAN demo; token in produzione).</p></div>
+    <div class="card"><h3>Strengths</h3><p>Natural, interruptible voice · on-premise (no API costs, data stays in-house) ·
+    resilient · diagnosable (<code>python -m voicebot.doctor</code>, <code>/diag</code>) · testable without network or models.</p></div>
+    <div class="card"><h3>Weaknesses and mitigations</h3><p>Slow first token (the BE runs the whole inference first; v2 hides it with a single spoken reply) ·
+    STT <code>tiny</code> on CPU (upgrade with a GPU) · no authentication on WS/BE (LAN demo only; add tokens in production).</p></div>
   </div>
-  <h2>5 · Esercizio e test</h2>
-  <pre>python setup\setup_env.py
-copy .env.example .env        # BACKEND_BASE_URL=http://&lt;IP-BE&gt;:8000
-.venv\Scripts\python -m voicebot
-WS: ws://localhost:8003/ws/voice · Health: /health · Questa pagina: /tech
-Test offline: python -m pytest voice/tests -q   (stub BE, 13 test)
-Test LAN: puntare BACKEND_BASE_URL all'IP del BE (porta 8000 aperta).</pre>
-  <p class="mut">Documento completo: <code>voice/documentazione.md</code> · Contratto BE: <code>backend/api/routes.py</code> · Prova vocale: <code>/prova-vocale</code></p>
+  <h2>5 · Run and test</h2>
+  <pre>python -m voicebot                 # live server (ws://host:8003/ws/voice, page /prova-vocale)
+python -m voicebot.v2              # on-demand voice chat (any PC, local microphone)
+python -m voicebot.live_client     # live call from a PC without browser microphone access
+python -m voicebot.doctor          # explains what is wrong with this setup
+cd voice &amp;&amp; ..\.venv\Scripts\python -m pytest tests -q</pre>
 </main>
 </body>
 </html>
