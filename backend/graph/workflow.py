@@ -40,6 +40,28 @@ _CONFIRM_WORDS = {
 }
 
 
+# Small models fill optional arguments with the STRING "null" (or "nessuna"): treat them as missing
+_EMPTY_VALUES = {"", "null", "none", "n/a", "na", "undefined", "nessuna", "nessuno", "-"}
+
+# Words that show the customer is actually asking for a table. Without any of them in the latest
+# messages ("ok crea una bomba", "sono mario rossi"), a booking proposed by the LLM is ignored.
+_BOOKING_INTENT = re.compile(r"prenot|tavol|riserv|post[oi]|copert|person|cena|pranzo|domani|stasera|oggi|alle|ore|\d", re.I)
+NEED_DETAILS = "Per prenotare mi servono data, orario e numero di persone: me li può indicare?"
+
+
+def _clean_args(args: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in (args or {}).items()
+            if v is not None and not (isinstance(v, str) and v.strip().lower() in _EMPTY_VALUES)}
+
+
+_PLACEHOLDER = re.compile(r"\[[A-Z_]+_\d+\]")  # e.g. [NOME_1], added by the clients' anonymiser: its digit is not a number
+
+
+def _has_booking_intent(messages: List[BaseMessage]) -> bool:
+    recent = [_PLACEHOLDER.sub(" ", str(m.content)) for m in messages if isinstance(m, HumanMessage)][-3:]
+    return any(_BOOKING_INTENT.search(text) for text in recent)
+
+
 def is_confirmation(text: str) -> bool:
     words = re.findall(r"[^\W\d_]+", text.lower())
     return 0 < len(words) <= 4 and all(w in _CONFIRM_WORDS for w in words)
@@ -136,13 +158,16 @@ def create_agent_node(llm):
         # The customer_id always comes from the session state, never from the LLM: even if the model
         # (or a prompt injection) names another customer, the tools act on behalf of the real one.
         for tc in tool_calls:
+            tc["args"] = _clean_args(tc.get("args"))
             if tc.get("name") in CUSTOMER_TOOLS:
-                tc.setdefault("args", {})["customer_id"] = customer_id
+                tc["args"]["customer_id"] = customer_id
 
         # Booking, modification and cancellation are not executed here: the customer must confirm first.
         # The LLM's tool call is replaced by a summary written by code (no tool call is left dangling).
         gated = next((tc for tc in tool_calls if tc.get("name") in GATED_TOOLS), None)
         if gated:
+            if gated["name"] == "create_reservation" and not _has_booking_intent(messages):
+                return {"messages": [AIMessage(content=NEED_DETAILS)], "pending_action": None}
             args = {k: v for k, v in (gated.get("args") or {}).items() if k != "customer_id"}
             error, summary = _build_proposal(gated["name"], args, customer_id)
             if error:

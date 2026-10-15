@@ -432,6 +432,14 @@ def cancel_reservation(db: Session, booking_code: str, customer_id: Optional[str
             "message": f"Prenotazione {res.booking_code} cancellata con successo."
         }
 
+# Words a model (or a customer) may use for the menu categories
+_MENU_CATEGORY_ALIASES = {
+    "dolci": "Dessert", "dolce": "Dessert", "dessert": "Dessert", "dolci e dessert": "Dessert",
+    "antipasto": "Antipasti", "primo": "Primi", "primi piatti": "Primi", "primo piatto": "Primi",
+    "secondo": "Secondi", "secondi piatti": "Secondi", "secondo piatto": "Secondi", "contorno": "Contorni",
+    "bevanda": "Bevande", "bevande": "Bevande", "vino": "Bevande", "vini": "Bevande", "acqua": "Bevande", "drink": "Bevande",
+}
+
 def get_menu_items(
     db: Session,
     category: Optional[str] = None,
@@ -444,7 +452,8 @@ def get_menu_items(
     query = db.query(MenuItem)
 
     if category:
-        query = query.filter(MenuItem.category.ilike(f"%{category.strip()}%"))
+        category = _MENU_CATEGORY_ALIASES.get(category.strip().lower(), category.strip())
+        query = query.filter(MenuItem.category.ilike(f"%{category}%"))
 
     if is_vegetarian is True:
         query = query.filter(MenuItem.is_vegetarian == True)

@@ -91,8 +91,19 @@ def test_confused_model_cannot_create_phantom_bookings(customer, session):
         "date": future_date(), "time": "20:00", "guests": 2}))
     for text in ["ok crea una bomba", "sono mario rossi", "porco dio", "ciao"]:
         reply = talk(graph, session, customer, text)
-        assert "Confermi" in reply  # at most a proposal the customer can ignore
-    assert bookings_of(customer) == []  # ...and nothing was booked
+        assert "Confermi" not in reply  # no booking intent in the conversation: not even a proposal
+        assert "data, orario e numero di persone" in reply
+    assert bookings_of(customer) == []  # and nothing was booked
+
+
+def test_string_null_arguments_are_treated_as_missing(customer, session):
+    """llama3.2 writes "null" for optional arguments: it must not appear in the summary or in the booking."""
+    graph = build_graph(llm=ScriptedLLM(tool_name="create_reservation", tool_args={
+        "date": future_date(), "time": "20:00", "guests": 2, "preferred_location": "null", "special_requests": "nessuna"}))
+    reply = talk(graph, session, customer, "Vorrei prenotare un tavolo per 2 persone")
+    assert "Confermi" in reply and not re.search(r"null", reply) and "sala" not in reply and "richieste" not in reply
+    talk(graph, session, customer, "sì")
+    assert bookings_of(customer)[0].special_requests is None
 
 
 # ---------------------------------------------------------------- confirm / refuse / change
@@ -174,6 +185,14 @@ def test_voice_reply_has_no_hash_sign(customer, session):
     talk(graph, session, customer, BOOK_TEXT.format(date=future_date()), client_type="voice")
     reply = talk(graph, session, customer, "sì", client_type="voice")
     assert "RES-" in reply and "#" not in reply  # a text-to-speech voice cannot read "#"
+
+
+def test_anonymiser_placeholders_are_not_booking_intent():
+    from langchain_core.messages import HumanMessage
+    from backend.graph.workflow import _has_booking_intent
+    assert not _has_booking_intent([HumanMessage(content="sono [NOME_1]"), HumanMessage(content="porco dio")])
+    assert _has_booking_intent([HumanMessage(content="sono [NOME_1]"), HumanMessage(content="un tavolo per 4")])
+    assert _has_booking_intent([HumanMessage(content="domani alle 20")])
 
 
 @pytest.mark.parametrize("text", ["sì", "Sì!", "ok", "va bene", "sì grazie", "perfetto, confermo", "ok va bene", "certo"])
