@@ -26,6 +26,10 @@ _FRASI_TEL = re.compile(
 _FRASI_NOME = re.compile(
     r"\b(?:mi chiamo|il mio nome è|il mio nome|nome e cognome|a nome di|a nome|nome|cognome|sono)\b", re.I
 )
+# Formule di cortesia: non sono né un nome né una domanda ("Mario Rossi, 333 1234567, grazie").
+_CORTESIA = re.compile(r"\b(?:grazie(?: mille)?|per favore|per cortesia|prego|cordiali saluti|a presto)\b", re.I)
+# Simboli che non compaiono in un nome: segno di codice, HTML o tentativi di iniezione.
+_SIMBOLI_SOSPETTI = re.compile(r"[<>{}\[\];=\\|`$]|--")
 # Solo congiunzioni: articoli come "la" o "di" possono far parte di un cognome (La Rosa, Di Maio).
 _CONGIUNZIONI = re.compile(r"\b(?:e|è|ed|o|oppure)\b", re.I)
 _RIFIUTO = re.compile(
@@ -37,6 +41,7 @@ _NON_NOMI = {
     "quanto", "quando", "dove", "come", "perché", "perche", "cosa", "che", "per", "con", "non",
     "grazie", "persone", "orario", "domani", "oggi", "stasera", "posso", "potete", "informazioni",
     "aiuto", "privacy", "si", "sì", "no", "ok",
+    "boh", "mah", "uffa", "ehm", "hmm", "ma", "anzi", "però", "pero", "aspetta", "sbagliato", "corretto",
 }
 
 
@@ -78,15 +83,17 @@ def estrai_contatti(testo):
     # --- Nome: quello che resta togliendo telefono, email e frasi di contorno ---
     resto = _EMAIL.sub(" ", resto)
     resto = re.sub(r"\d+", " ", resto)
-    for regola in (_SALUTI, _FRASI_TEL, _FRASI_NOME, _CONGIUNZIONI):
+    for regola in (_SALUTI, _CORTESIA, _FRASI_TEL, _FRASI_NOME, _CONGIUNZIONI):
         resto = regola.sub(" ", resto)
     parole = re.findall(r"[^\W\d_]+(?:['’\-][^\W\d_]+)*", resto)  # lettere, con apostrofi e trattini interni
     parole = [p for p in parole if len(p) > 1]  # le iniziali ("M.") si scartano
 
     if parole:
-        if "?" in testo or {p.lower() for p in parole} & _NON_NOMI:
+        if _SIMBOLI_SOSPETTI.search(testo):
+            risultato.problemi.append("nome_non_chiaro")
+        elif "?" in testo or {p.lower() for p in parole} & _NON_NOMI:
             risultato.problemi.append("altro")
-        elif len(parole) > 4:
+        elif len(parole) > 5:  # "Maria Grazia De Luca Esposito" sono 5 parole e sono un nome vero
             risultato.problemi.append("nome_non_chiaro")
         else:
             risultato.nome = " ".join(_formatta_nome(p) for p in parole)
@@ -109,7 +116,13 @@ _FRASI_PROBLEMI = {
     "telefoni_multipli": "Ho trovato più numeri di telefono: quale devo usare per la prenotazione?",
     "nome_non_chiaro": "Non sono sicuro di aver capito il nome: può scrivermi nome e cognome?",
 }
-_SI = re.compile(r"^\W*(?:s[ìi]|ok|certo|corretto|esatto|esattamente|giusto|perfetto|confermo|va bene|assolutamente|yes)\b", re.I)
+_PAROLE_SI = r"(?:s[ìi]|ok|certo|corretto|esatto|esattamente|giusto|perfetto|confermo|va bene|assolutamente|yes)"
+# Un "sì" vale solo se è TUTTO il messaggio ("sì", "sì, grazie", "ok perfetto"): con "sì ma il numero è sbagliato"
+# non si registra niente. _INIZIA_CON_SI serve a riconoscere le risposte miste, per chiedere chiarimenti.
+_SI = re.compile(
+    rf"^\W*{_PAROLE_SI}(?:[\W]+(?:{_PAROLE_SI}|grazie|tutto (?:ok|giusto|corretto)|[èe] corretto))*\W*$", re.I
+)
+_INIZIA_CON_SI = re.compile(rf"^\W*{_PAROLE_SI}\b", re.I)
 _NO = re.compile(r"^\W*(?:no|sbagliato|errato|non è corretto|non e corretto)\b", re.I)
 
 
@@ -151,7 +164,11 @@ class Registrazione:
             self.fase = "completata"
             return f"Perfetto, grazie {self.nome}! Registro i suoi dati.", "registra"
         contatti = estrai_contatti(testo)
-        if self._aggiorna(contatti, testo):  # una correzione, anche dopo un "no"
+        # Una risposta che comincia con sì/no ma contiene altro è una correzione solo se porta un
+        # telefono o dice "mi chiamo...": altrimenti le parole sparse ("il numero è sbagliato") non sono dati.
+        risposta_mista = _NO.match(testo) or _INIZIA_CON_SI.match(testo)
+        porta_un_dato = contatti.telefono or _FRASI_NOME.search(testo)
+        if not (risposta_mista and not porta_un_dato) and self._aggiorna(contatti, testo):
             return self._riepilogo(), None
         if _NO.match(testo):
             self.nome = self.telefono = None
