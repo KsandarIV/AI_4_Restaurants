@@ -9,3 +9,6 @@ class AgentState(TypedDict):
     customer_id: Optional[str]
     client_type: Optional[str]  # "chat" or "voice"
     metadata: Optional[Dict[str, Any]]
+    # Booking/modification/cancellation proposed by the LLM and waiting for the customer's "yes":
+    # {"tool": "create_reservation", "args": {...}}. It is executed by code, never by the LLM.
+    pending_action: Optional[Dict[str, Any]]

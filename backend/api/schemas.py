@@ -79,10 +79,22 @@ class MenuItemResponse(BaseModel):
     is_vegetarian: bool
     is_vegan: bool
     is_gluten_free: bool
+    dish_type: Optional[str] = None
+    available: bool = True
 
 class HealthResponse(BaseModel):
-    status: str
+    status: str = Field(..., description="'online' se database e modello rispondono, altrimenti 'degraded'")
     restaurant: str
     llm_provider: str
     llm_model: str
     database: str
+    llm_reachable: Optional[bool] = Field(None, description="Il server del modello (Ollama) risponde")
+    llm_model_available: Optional[bool] = Field(None, description="Il modello configurato è installato")
+
+class ClosureRequest(BaseModel):
+    date: str = Field(..., description="Data di chiusura AAAA-MM-GG")
+    reason: Optional[str] = Field(None, max_length=200, description="Motivo (es. Ferragosto)")
+
+class MenuItemUpdate(BaseModel):
+    available: Optional[bool] = Field(None, description="false = piatto esaurito, non viene più proposto")
+    price: Optional[float] = Field(None, gt=0)

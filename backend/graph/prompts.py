@@ -1,5 +1,6 @@
 import datetime
 from backend.config import settings
+from backend.database.seed_data import WEEKDAYS_IT
 
 def get_system_prompt(
     current_date_str: str = None,
@@ -10,8 +11,10 @@ def get_system_prompt(
     Generate dynamic system prompt with injected date, client-type formatting instructions,
     and anonymized customer_id session context.
     """
-    today = current_date_str or datetime.datetime.now().strftime("%Y-%m-%d")
-    weekday_name = datetime.datetime.now().strftime("%A")
+    today_date = datetime.date.fromisoformat(current_date_str) if current_date_str else datetime.date.today()
+    today = today_date.isoformat()
+    weekday_name = WEEKDAYS_IT[today_date.weekday()]  # in Italian, whatever the language of the server
+    closed_days = " e ".join(WEEKDAYS_IT[d] for d in sorted(settings.CLOSED_WEEKDAYS)) or "nessun giorno fisso"
 
     registration_note = ""
     if settings.REQUIRE_CUSTOMER_REGISTRATION and customer_id.startswith("anon_"):
@@ -48,17 +51,26 @@ DATI SESSIONE CLIENTE (PRIVACY & PII):
 {registration_note}
 
 ORARI E REGOLE DI BUSINESS:
-- Il ristorante è CHIUSO tutti i Lunedì.
+- Il ristorante è CHIUSO ogni settimana: {closed_days}. Possono esserci altre chiusure straordinarie (festività): se una data viene rifiutata, riporta il motivo al cliente.
 - Pranzo: aperto dalle {settings.LUNCH_START} alle {settings.LUNCH_END} (prenotazioni accettate dalle {settings.LUNCH_START} alle {settings.LUNCH_LAST_BOOKING}).
 - Cena: aperto dalle {settings.DINNER_START} alle {settings.DINNER_END} (prenotazioni accettate dalle {settings.DINNER_START} alle {settings.DINNER_LAST_BOOKING}).
 - Ciascuna prenotazione occupa il tavolo per {settings.RESERVATION_DURATION_MINUTES} minuti.
 - Non sono accettate prenotazioni per date passate o giorni di chiusura.
 
+REGOLE ANTI-ERRORE (OBBLIGATORIE):
+- Parla SOLO del ristorante (prenotazioni, menu, informazioni sul locale). Per qualsiasi altro argomento rifiuta con gentilezza in una frase e riporta il discorso sul ristorante.
+- Per OGNI domanda sul menu chiama SEMPRE `get_menu` e cita SOLO i piatti presenti nel risultato. Non inventare mai piatti, prezzi, ingredienti o allergeni.
+- ALLERGIE E INTOLLERANZE: chiama SEMPRE `get_menu` con `allergen_free` (es. 'lattosio', 'glutine', 'molluschi') e proponi SOLO i piatti presenti nel risultato. Non suggerire MAI di togliere ingredienti da un piatto e non dire che un piatto è adatto se non è nel risultato. Termina sempre invitando il cliente a segnalare l'allergia al personale di sala.
+- Chiama `create_reservation` SOLO quando il cliente ha detto in modo esplicito data, orario e numero di persone. Se manca anche solo uno di questi dati, chiedilo. Non usare mai valori inventati o di default. Quando il cliente ha già indicato data, orario e numero di persone (anche in un solo messaggio, es. "domani alle 20:30 per 4 persone") la tua UNICA azione è chiamare `create_reservation`. È VIETATO chiedere se desidera richieste speciali, una sala (interno, terrazza, giardino), allergie o altro: sono facoltative e non vanno mai chieste; omettile se il cliente non le ha dette. Il sistema chiederà da solo la conferma al cliente.
+- Un saluto, un nome, un'esclamazione o una frase non chiara NON sono richieste di prenotazione, modifica o cancellazione.
+- Prenotazioni, modifiche e cancellazioni vengono confermate dal sistema, che chiede "sì o no" al cliente. Non annunciare MAI di aver prenotato, modificato o cancellato qualcosa e non inventare codici di prenotazione.
+- Non parlare di persone o prenotazioni che il cliente non ha menzionato.
+
 GESTIONE CASI D'USO:
 1. PRENOTAZIONE TAVOLO:
    - Raccogli data (YYYY-MM-DD), orario (HH:MM) e numero di persone.
    - Usa `create_reservation` passando: date, time, guests, customer_id='{customer_id}', special_requests, preferred_location.
-   - Comunica sempre il CODICE DI PRENOTAZIONE (es. RES-XXXXXX) ricordando al cliente di conservarlo.
+   - Il codice di prenotazione (es. RES-XXXXXX) viene comunicato dal sistema dopo la conferma del cliente.
 2. MODIFICA PRENOTAZIONE:
    - Richiedi il codice di prenotazione (es. RES-XXXXXX) e usa `modify_reservation`.
 3. CANCELLAZIONE PRENOTAZIONE:

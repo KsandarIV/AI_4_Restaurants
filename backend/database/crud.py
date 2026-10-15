@@ -4,20 +4,42 @@ import datetime
 import threading
 import uuid
 from typing import Optional, List, Dict, Any, Tuple
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from backend.database.connection import engine, Base, SessionLocal
-from backend.database.models import RestaurantTable, Reservation, MenuItem, RestaurantInfo, Customer
-from backend.database.seed_data import seed_database
+from backend.database.models import RestaurantTable, Reservation, MenuItem, RestaurantInfo, Customer, Closure
+from backend.database.seed_data import seed_database, sync_static_data, WEEKDAYS_IT
 from backend.config import settings
 
 # Thread lock to prevent race conditions during concurrent table bookings
 table_lock = threading.Lock()
 
+# Columns added after the first release: create_all() creates new tables but never alters existing ones
+_COLUMNS_ADDED_LATER = {
+    "menu_items": {"dish_type": "VARCHAR(20)", "available": "BOOLEAN NOT NULL DEFAULT 1"},
+}
+
+def _add_missing_columns(eng=None):
+    """Bring an existing SQLite file up to date (idempotent): adds the columns introduced after it was created."""
+    eng = eng or engine
+    if eng.dialect.name != "sqlite":
+        return
+    with eng.begin() as conn:
+        for table, columns in _COLUMNS_ADDED_LATER.items():
+            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            for column, ddl in columns.items():
+                if column not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
 def init_db():
-    """Create all tables and seed data."""
+    """Create all tables, update old database files, seed data and align menu/info with the code."""
     Base.metadata.create_all(bind=engine)
+    _add_missing_columns()
     with SessionLocal() as db:
         seed_database(db)
+        sync_static_data(db)
+
+# ------------------------------------------------------------------ customers
 
 def create_customer(db: Session, name: str, phone: str) -> Dict[str, Any]:
     """Store a customer's contact data and return the anonymous customer_id clients must use from now on.
@@ -40,16 +62,45 @@ def is_registered_customer(db: Session, customer_id: Optional[str]) -> bool:
         return False
     return db.query(Customer.id).filter(Customer.customer_id == customer_id.strip()).first() is not None
 
+def purge_old_customers(db: Session, days: int, dry_run: bool = False) -> int:
+    """Delete name and phone of customers registered more than `days` ago with no booking since then.
+
+    Their reservations stay (the customer_id token no longer points to anybody: they are anonymous).
+    Returns how many customers were (or, with dry_run, would be) deleted.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)  # created_at is stored without timezone
+    cutoff_date = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    recent = {row[0] for row in db.query(Reservation.customer_id).filter(Reservation.date >= cutoff_date)}
+    old = db.query(Customer).filter(Customer.created_at < now - datetime.timedelta(days=days)).all()
+    victims = [c for c in old if c.customer_id not in recent]
+    if not dry_run:
+        for c in victims:
+            db.delete(c)
+        db.commit()
+    return len(victims)
+
 def _can_access(reservation: Reservation, customer_id: Optional[str]) -> bool:
     """With registration enabled, only the customer who made a booking can read, modify or cancel it."""
     if not settings.REQUIRE_CUSTOMER_REGISTRATION:
         return True
     return bool(customer_id) and reservation.customer_id == customer_id.strip()
 
-def generate_booking_code() -> str:
-    """Generate a readable, unique reservation code e.g. RES-9A8B2C."""
-    chars = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
-    return f"RES-{chars}"
+# ------------------------------------------------------------------ helpers
+
+def generate_booking_code(db: Optional[Session] = None) -> str:
+    """Generate a readable reservation code e.g. RES-9A8B2C, unique in the database when db is given."""
+    for _ in range(20):
+        code = "RES-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        if db is None or db.query(Reservation.id).filter(Reservation.booking_code == code).first() is None:
+            return code
+    raise RuntimeError("Impossibile generare un codice di prenotazione univoco.")
+
+def _clean_text(value: Optional[str], limit: int = 300) -> Optional[str]:
+    """Free text typed by a customer: trimmed, empty -> None, capped in length."""
+    if value is None:
+        return None
+    value = value.strip()
+    return value[:limit] if value else None
 
 def time_to_minutes(time_str: str) -> int:
     """Convert HH:MM string to minutes since midnight."""
@@ -63,6 +114,11 @@ def time_to_minutes(time_str: str) -> int:
         return h * 60 + m
     except Exception:
         raise ValueError(f"Orario '{time_str}' non valido. Usare il formato HH:MM (es. 13:00, 20:30).")
+
+def normalize_time(time_str: str) -> str:
+    """'8:5' -> '08:05': the same time is always stored the same way."""
+    minutes = time_to_minutes(time_str)
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 def validate_time_and_shift(time_str: str) -> Tuple[bool, str, str]:
     """
@@ -96,9 +152,10 @@ def determine_shift(time_str: str) -> str:
     is_valid, _, shift = validate_time_and_shift(time_str)
     return shift if is_valid else "fuori_orario"
 
-def validate_date(date_str: str) -> Tuple[bool, str, Optional[datetime.date]]:
+def validate_date(date_str: str, db: Optional[Session] = None) -> Tuple[bool, str, Optional[datetime.date]]:
     """
-    Validate date string (format YYYY-MM-DD, no past dates, no Mondays, max 120 days).
+    Validate date string (format YYYY-MM-DD, no past dates, no weekly closing day, no closure, max 120 days).
+    Closures (holidays...) are checked only when a database session is given.
     """
     try:
         parts = date_str.strip().split("-")
@@ -112,9 +169,14 @@ def validate_date(date_str: str) -> Tuple[bool, str, Optional[datetime.date]]:
     if dt < today:
         return False, f"Non è possibile prenotare per una data passata ({date_str}). Oggi è {today.isoformat()}.", None
 
-    # Monday check (weekday 0 is Monday)
-    if dt.weekday() == 0:
-        return False, f"Il ristorante è chiuso il Lunedì ({date_str}). Vi invitiamo a scegliere un giorno dal Martedì alla Domenica.", None
+    if dt.weekday() in settings.CLOSED_WEEKDAYS:
+        return False, f"Il ristorante è chiuso il {WEEKDAYS_IT[dt.weekday()]} ({date_str}). Vi invitiamo a scegliere un altro giorno.", None
+
+    if db is not None:
+        closure = db.query(Closure).filter(Closure.date == dt.isoformat()).first()
+        if closure:
+            reason = f" ({closure.reason})" if closure.reason else ""
+            return False, f"Il ristorante è chiuso il {dt.isoformat()}{reason}. Vi invitiamo a scegliere un altro giorno.", None
 
     max_future = today + datetime.timedelta(days=120)
     if dt > max_future:
@@ -122,9 +184,9 @@ def validate_date(date_str: str) -> Tuple[bool, str, Optional[datetime.date]]:
 
     return True, "", dt
 
-def is_restaurant_open_on_date(date_str: str) -> bool:
+def is_restaurant_open_on_date(date_str: str, db: Optional[Session] = None) -> bool:
     """Check if date is valid and restaurant is open."""
-    is_valid, _, _ = validate_date(date_str)
+    is_valid, _, _ = validate_date(date_str, db)
     return is_valid
 
 def get_available_tables(
@@ -189,6 +251,42 @@ def get_available_tables(
     available = [t for t in candidate_tables if t.id not in busy_table_ids]
     return available
 
+def _restaurant_phone(db: Session) -> str:
+    row = db.query(RestaurantInfo).filter(RestaurantInfo.key == "phone").first()
+    return row.value if row else "il ristorante"
+
+def validate_reservation_request(db: Session, date: str, time: str, guests: int, customer_id: str) -> Tuple[Optional[str], str]:
+    """Checks every rule that does not depend on table availability.
+
+    Shared by create_reservation and by the confirmation step of the conversation, so a booking
+    that cannot be made is never proposed to the customer. Returns (error_message or None, shift).
+    """
+    date_ok, date_err, _ = validate_date(date, db)
+    if not date_ok:
+        return date_err, "fuori_orario"
+
+    time_ok, time_err, shift = validate_time_and_shift(time)
+    if not time_ok:
+        return time_err, shift
+
+    if guests <= 0:
+        return f"Numero di ospiti ({guests}) non valido.", shift
+    max_capacity = db.query(func.max(RestaurantTable.capacity)).filter(RestaurantTable.is_active == True).scalar() or 0
+    if guests > max_capacity:
+        return (
+            f"Il nostro tavolo più grande ha {max_capacity} posti: per gruppi di più di {max_capacity} persone "
+            f"vi preghiamo di contattarci telefonicamente al {_restaurant_phone(db)}.",
+            shift
+        )
+
+    # The customer must have registered name and phone first (the LLM only ever sees the token)
+    if settings.REQUIRE_CUSTOMER_REGISTRATION and not is_registered_customer(db, customer_id):
+        return "Per prenotare serve prima la registrazione del nome e del numero di telefono.", shift
+
+    return None, shift
+
+# ------------------------------------------------------------------ reservations
+
 def create_reservation(
     db: Session,
     date: str,
@@ -201,32 +299,11 @@ def create_reservation(
     """
     Create a new reservation in the database with concurrency lock and strict validations.
     """
-    # 1. Validate date
-    date_ok, date_err, _ = validate_date(date)
-    if not date_ok:
-        return {"success": False, "error": date_err}
-
-    # 2. Validate time and shift
-    time_ok, time_err, shift = validate_time_and_shift(time)
-    if not time_ok:
-        return {"success": False, "error": time_err}
-
-    # 3. Validate party size
-    if guests <= 0 or guests > 20:
-        return {
-            "success": False,
-            "error": f"Numero di ospiti ({guests}) non valido. Per gruppi superiori a 20 persone vi preghiamo di contattarci telefonicamente."
-        }
-
-    # Clean customer_id
     cid = (customer_id or "anon_client").strip()
-
-    # 4. The customer must have registered name and phone first (the LLM only ever sees the token)
-    if settings.REQUIRE_CUSTOMER_REGISTRATION and not is_registered_customer(db, cid):
-        return {
-            "success": False,
-            "error": "Per prenotare serve prima la registrazione del nome e del numero di telefono."
-        }
+    error, shift = validate_reservation_request(db, date, time, guests, cid)
+    if error:
+        return {"success": False, "error": error}
+    time = normalize_time(time)
 
     # Thread-safe table allocation
     with table_lock:
@@ -258,18 +335,18 @@ def create_reservation(
             }
 
         chosen_table = available_tables[0]
-        booking_code = generate_booking_code()
+        booking_code = generate_booking_code(db)
 
         reservation = Reservation(
             booking_code=booking_code,
             customer_id=cid,
             table_id=chosen_table.id,
-            date=date,
+            date=date.strip(),
             time=time,
             shift=shift,
             guests_count=guests,
             status="CONFIRMED",
-            special_requests=special_requests
+            special_requests=_clean_text(special_requests)
         )
 
         db.add(reservation)
@@ -339,13 +416,13 @@ def modify_reservation(
         if res.status == "CANCELLED":
             return {"success": False, "error": f"La prenotazione {booking_code} è già stata cancellata e non può essere modificata."}
 
-        target_date = new_date or res.date
+        target_date = new_date.strip() if new_date else res.date
         target_time = new_time or res.time
         target_guests = new_guests or res.guests_count
 
         # Validate date if changed
         if new_date:
-            date_ok, date_err, _ = validate_date(target_date)
+            date_ok, date_err, _ = validate_date(target_date, db)
             if not date_ok:
                 return {"success": False, "error": date_err}
 
@@ -354,15 +431,16 @@ def modify_reservation(
             time_ok, time_err, _ = validate_time_and_shift(target_time)
             if not time_ok:
                 return {"success": False, "error": time_err}
+            target_time = normalize_time(target_time)
 
-        date_or_time_changed = (new_date and new_date != res.date) or (new_time and new_time != res.time) or (new_guests and new_guests != res.guests_count)
+        date_or_time_changed = (new_date and target_date != res.date) or (new_time and target_time != res.time) or (new_guests and new_guests != res.guests_count)
 
         if date_or_time_changed:
             time_ok, time_err, shift = validate_time_and_shift(target_time)
             if not time_ok:
                 return {"success": False, "error": time_err}
 
-            available_tables = get_available_tables(
+            candidates = get_available_tables(
                 db=db,
                 date=target_date,
                 time=target_time,
@@ -370,20 +448,28 @@ def modify_reservation(
                 exclude_reservation_id=res.id
             )
 
-            if not available_tables:
+            if not candidates:
                 return {
                     "success": False,
                     "error": f"Nessun tavolo disponibile per {target_guests} persone in data {target_date} ore {target_time}."
                 }
 
-            res.table_id = available_tables[0].id
+            # Keep the customer's table if it is still free and big enough; otherwise a table in the same room
+            current_location = res.table.location if res.table else None
+            chosen = (
+                next((t for t in candidates if t.id == res.table_id), None)
+                or next((t for t in candidates if current_location and t.location == current_location), None)
+                or candidates[0]
+            )
+
+            res.table_id = chosen.id
             res.date = target_date
             res.time = target_time
             res.shift = shift
             res.guests_count = target_guests
 
         if new_requests is not None:
-            res.special_requests = new_requests
+            res.special_requests = _clean_text(new_requests)
 
         db.commit()
         db.refresh(res)
@@ -428,19 +514,120 @@ def cancel_reservation(db: Session, booking_code: str, customer_id: Optional[str
             "message": f"Prenotazione {res.booking_code} cancellata con successo."
         }
 
+# ------------------------------------------------------------------ staff (restaurant owner)
+
+def list_reservations_for_staff(db: Session, date: Optional[str] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Reservations with the customer's name and phone. ONLY for the staff area: never give this to the LLM."""
+    query = db.query(Reservation)
+    if date:
+        query = query.filter(Reservation.date == date)
+    else:
+        query = query.filter(Reservation.date >= datetime.date.today().isoformat())
+    if status:
+        query = query.filter(Reservation.status == status.upper())
+    result = []
+    for r in query.order_by(Reservation.date, Reservation.time).all():
+        customer = db.query(Customer).filter(Customer.customer_id == r.customer_id).first()
+        result.append({
+            "booking_code": r.booking_code,
+            "date": r.date,
+            "time": r.time,
+            "guests_count": r.guests_count,
+            "status": r.status,
+            "table_number": r.table.table_number if r.table else None,
+            "table_location": r.table.location if r.table else None,
+            "special_requests": r.special_requests,
+            "customer_name": customer.name if customer else None,
+            "customer_phone": customer.phone if customer else None,
+        })
+    return result
+
+def list_closures(db: Session) -> List[Dict[str, Any]]:
+    return [{"date": c.date, "reason": c.reason} for c in db.query(Closure).order_by(Closure.date).all()]
+
+def add_closure(db: Session, date: str, reason: Optional[str] = None) -> Dict[str, Any]:
+    """Close the restaurant on a date. Existing confirmed reservations are NOT cancelled: the response lists them."""
+    try:
+        datetime.datetime.strptime(date.strip(), "%Y-%m-%d")
+    except ValueError:
+        return {"success": False, "error": "Data non valida. Usare il formato AAAA-MM-GG."}
+    date = date.strip()
+    if db.query(Closure).filter(Closure.date == date).first() is None:
+        db.add(Closure(date=date, reason=_clean_text(reason, 200)))
+        db.commit()
+    affected = [r.booking_code for r in db.query(Reservation).filter(Reservation.date == date, Reservation.status == "CONFIRMED")]
+    return {"success": True, "date": date, "reservations_to_handle": affected}
+
+def remove_closure(db: Session, date: str) -> bool:
+    closure = db.query(Closure).filter(Closure.date == date.strip()).first()
+    if closure is None:
+        return False
+    db.delete(closure)
+    db.commit()
+    return True
+
+def update_menu_item(db: Session, item_id: int, available: Optional[bool] = None, price: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if item is None:
+        return None
+    if available is not None:
+        item.available = available
+    if price is not None:
+        item.price = price
+    db.commit()
+    return {"id": item.id, "name": item.name, "available": item.available, "price": item.price}
+
+# ------------------------------------------------------------------ menu and information
+
+# Words a model (or a customer) may use for the menu categories
+_MENU_CATEGORY_ALIASES = {
+    "dolci": "Dessert", "dolce": "Dessert", "dessert": "Dessert", "dolci e dessert": "Dessert",
+    "antipasto": "Antipasti", "primo": "Primi", "primi piatti": "Primi", "primo piatto": "Primi",
+    "secondo": "Secondi", "secondi piatti": "Secondi", "secondo piatto": "Secondi", "contorno": "Contorni",
+    "bevanda": "Bevande", "bevande": "Bevande", "vino": "Bevande", "vini": "Bevande", "acqua": "Bevande", "drink": "Bevande",
+}
+
+# Words used for the allergens in the menu ("lattosio", "glutine", "molluschi", "pesce", "uova", "solfiti")
+_ALLERGEN_ALIASES = {
+    "latticini": "lattosio", "latte": "lattosio", "formaggi": "lattosio", "formaggio": "lattosio", "derivati del latte": "lattosio",
+    "frumento": "glutine", "grano": "glutine", "cereali": "glutine",
+    "uovo": "uova", "frutti di mare": "molluschi", "vongole": "molluschi", "cozze": "molluschi",
+    "solfito": "solfiti", "vino": "solfiti",
+}
+
+# Words used for the kind of dish
+_DISH_TYPE_ALIASES = {"carni": "carne", "meat": "carne", "pesci": "pesce", "fish": "pesce", "verdura": "vegetale", "verdure": "vegetale",
+                      "dolci": "dolce", "dessert": "dolce", "bevande": "bevanda", "bibite": "bevanda"}
+
+class UnknownAllergen(ValueError):
+    """The requested allergen is not one of those in the menu: answering 'none contains it' would be dangerous."""
+    def __init__(self, allergen: str, known: List[str]):
+        super().__init__(f"Allergene '{allergen}' non riconosciuto. Allergeni presenti nel menu: {', '.join(known)}.")
+        self.allergen, self.known = allergen, known
+
 def get_menu_items(
     db: Session,
     category: Optional[str] = None,
     allergen_free: Optional[str] = None,
     is_vegetarian: Optional[bool] = None,
     is_vegan: Optional[bool] = None,
-    is_gluten_free: Optional[bool] = None
+    is_gluten_free: Optional[bool] = None,
+    dish_type: Optional[str] = None,
+    only_available: bool = True
 ) -> List[Dict[str, Any]]:
-    """Retrieve menu items with optional dietary and category filters."""
+    """Retrieve menu items with optional dietary, category and dish-type filters (sold-out dishes hidden by default)."""
     query = db.query(MenuItem)
 
+    if only_available:
+        query = query.filter(MenuItem.available == True)
+
     if category:
-        query = query.filter(MenuItem.category.ilike(f"%{category.strip()}%"))
+        category = _MENU_CATEGORY_ALIASES.get(category.strip().lower(), category.strip())
+        query = query.filter(MenuItem.category.ilike(f"%{category}%"))
+
+    if dish_type:
+        wanted = dish_type.strip().lower()
+        query = query.filter(MenuItem.dish_type == _DISH_TYPE_ALIASES.get(wanted, wanted))
 
     if is_vegetarian is True:
         query = query.filter(MenuItem.is_vegetarian == True)
@@ -454,8 +641,13 @@ def get_menu_items(
     items = query.all()
 
     if allergen_free:
-        allergen_target = allergen_free.strip().lower()
-        items = [i for i in items if allergen_target not in i.allergens.lower()]
+        target = allergen_free.strip().lower()
+        target = _ALLERGEN_ALIASES.get(target, target)
+        known = sorted({a.strip().lower() for (allergens,) in db.query(MenuItem.allergens).all()
+                        for a in (allergens or "").split(",") if a.strip()})
+        if target not in known:
+            raise UnknownAllergen(target, known)
+        items = [i for i in items if target not in [a.strip().lower() for a in (i.allergens or "").split(",")]]
 
     return [
         {
@@ -467,15 +659,29 @@ def get_menu_items(
             "allergens": i.allergens,
             "is_vegetarian": i.is_vegetarian,
             "is_vegan": i.is_vegan,
-            "is_gluten_free": i.is_gluten_free
+            "is_gluten_free": i.is_gluten_free,
+            "dish_type": i.dish_type,
+            "available": i.available
         }
         for i in items
     ]
 
+# Words used for the information keys ("opening_hours", "address", "phone", "parking", "services", ...)
+_INFO_ALIASES = {
+    "orari": "opening_hours", "orario": "opening_hours", "apertura": "opening_hours", "orari_di_apertura": "opening_hours",
+    "opening": "opening_hours", "hours": "opening_hours", "turni": "opening_hours",
+    "indirizzo": "address", "dove": "address", "posizione": "address", "location": "address",
+    "telefono": "phone", "tel": "phone", "cellulare": "phone", "contatti": "phone", "numero": "phone",
+    "mail": "email", "e-mail": "email", "parcheggio": "parking", "servizi": "services",
+    "pagamenti": "payment_methods", "pagamento": "payment_methods", "payment": "payment_methods", "nome": "name",
+}
+
 def get_restaurant_info(db: Session, key: Optional[str] = None) -> Dict[str, Any]:
     """Retrieve restaurant general information."""
     if key:
-        item = db.query(RestaurantInfo).filter(RestaurantInfo.key == key.strip().lower()).first()
+        normalized = key.strip().lower().replace(" ", "_")
+        normalized = _INFO_ALIASES.get(normalized, normalized)
+        item = db.query(RestaurantInfo).filter(RestaurantInfo.key == normalized).first()
         if item:
             return {item.key: item.value}
         return {}

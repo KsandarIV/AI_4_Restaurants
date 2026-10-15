@@ -157,6 +157,8 @@ def test_conversation_books_for_registered_and_refuses_for_anonymous(client):
     message = f"Vorrei prenotare un tavolo per 2 persone il {date} alle 20:30"
 
     reply = process_message(message, "sess_reg_1", customer_id=cid, client_type="chat", app=app_graph)["reply"]
+    assert "Confermi" in reply and "RES-" not in reply  # proposal first: nothing is booked yet
+    reply = process_message("sì", "sess_reg_1", customer_id=cid, client_type="chat", app=app_graph)["reply"]
     code = re.search(r"RES-[A-Z0-9]+", reply).group(0)
     with SessionLocal() as db:
         assert crud.get_reservation(db, code, customer_id=cid)["customer_id"] == cid
@@ -164,8 +166,10 @@ def test_conversation_books_for_registered_and_refuses_for_anonymous(client):
     reply = process_message(message, "sess_anon_1", customer_id="anon_abc123", client_type="chat", app=app_graph)["reply"]
     assert "registrazione" in reply.lower() and "RES-" not in reply
 
-    crud_cancel = process_message(f"Cancella la prenotazione {code}", "sess_reg_1", customer_id=cid, client_type="chat", app=app_graph)
-    assert "cancellata correttamente" in crud_cancel["reply"]
+    proposal = process_message(f"Cancella la prenotazione {code}", "sess_reg_1", customer_id=cid, client_type="chat", app=app_graph)
+    assert "Vuoi cancellare" in proposal["reply"]
+    done = process_message("sì", "sess_reg_1", customer_id=cid, client_type="chat", app=app_graph)
+    assert "cancellata correttamente" in done["reply"]
 
 
 class HostileLLM(MockChatModel):
@@ -188,7 +192,7 @@ def test_customer_id_comes_from_the_session_not_from_the_llm(client):
     # the (hostile) LLM claims to act as the owner, but the session says "attacker"
     graph = build_graph(llm=HostileLLM(victim_id=owner))
     reply = process_message(f"Cancella {code}", "sess_hostile_1", customer_id=attacker, client_type="chat", app=graph)["reply"]
-    assert "non trovata" in reply
+    assert "non trovo" in reply.lower()  # not even proposed: the session's customer does not own it
 
     with SessionLocal() as db:
         assert crud.get_reservation(db, code, customer_id=owner)["status"] == "CONFIRMED"

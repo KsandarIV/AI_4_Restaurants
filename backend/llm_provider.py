@@ -1,7 +1,10 @@
 import json
 import logging
 import re
-from typing import Any, List, Optional
+import threading
+import time
+from typing import Any, List, Optional, Tuple
+import httpx
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -210,6 +213,82 @@ class MockChatModel(BaseChatModel):
         )
 
 
+class ModelUnavailable(RuntimeError):
+    """Ollama is reachable but none of the wanted models is installed and able to call tools."""
+
+
+_resolved: Optional[Tuple[str, bool]] = None  # (installed model name, supports thinking), decided once
+_resolve_lock = threading.Lock()  # the warm-up thread and the first request must not decide twice
+
+
+def _candidates() -> List[str]:
+    wanted = [m.strip() for m in settings.OLLAMA_MODEL.split(",") if m.strip()] + list(settings.OLLAMA_FALLBACK_MODELS)
+    return list(dict.fromkeys(wanted))  # no duplicates, order kept
+
+
+def _matches(candidate: str, installed: str) -> bool:
+    """'llama3.2' matches 'llama3.2:latest'; 'gemma4:12b' matches only that tag."""
+    return installed == candidate or (":" not in candidate and installed.split(":")[0] == candidate)
+
+
+def resolve_ollama_model(force: bool = False) -> Tuple[str, bool]:
+    """Chooses the model to use: the first wanted one that is installed and can call tools (needed to book).
+
+    Returns (installed name, supports thinking). The choice is remembered. Raises httpx errors if Ollama is
+    down and ModelUnavailable if no suitable model is installed.
+    """
+    with _resolve_lock:
+        return _resolve_locked(force)
+
+
+def _resolve_locked(force: bool) -> Tuple[str, bool]:
+    global _resolved
+    if _resolved and not force:
+        return _resolved
+    base = settings.OLLAMA_BASE_URL.rstrip("/")
+    installed = [m["name"] for m in httpx.get(f"{base}/api/tags", timeout=3).json().get("models", [])]
+    for candidate in _candidates():
+        for name in installed:
+            if not _matches(candidate, name):
+                continue
+            capabilities = httpx.post(f"{base}/api/show", json={"model": name, "name": name}, timeout=5).json().get("capabilities", [])
+            if "tools" not in capabilities:
+                logger.warning("Il modello %s non supporta gli strumenti: non può prenotare, lo salto.", name)
+                continue
+            _resolved = (name, "thinking" in capabilities)
+            if candidate != _candidates()[0]:
+                logger.warning("Modello preferito non disponibile: uso %s.", name)
+            logger.info("Modello scelto: %s (thinking supportato: %s)", name, "sì" if _resolved[1] else "no")
+            return _resolved
+    raise ModelUnavailable(
+        f"Nessun modello adatto in Ollama. Cercati: {', '.join(_candidates())}. "
+        f"Installati: {', '.join(installed) or 'nessuno'}. Scaricane uno, ad esempio: ollama pull gemma4:12b"
+    )
+
+
+def effective_reasoning(supports_thinking: bool) -> bool:
+    """Thinking is OFF unless explicitly requested (and supported by the model)."""
+    wanted = settings.OLLAMA_REASONING
+    if wanted is None:
+        return False
+    if wanted and not supports_thinking:
+        logger.warning("OLLAMA_REASONING=true ignorato: il modello non supporta il thinking.")
+        return False
+    return wanted
+
+
+def warm_up() -> None:
+    """Loads the model in memory at startup, so the first customer does not wait 20-40 seconds. Never raises."""
+    if settings.LLM_PROVIDER == "mock":
+        return
+    try:
+        started = time.time()
+        get_llm().invoke("Rispondi solo con la parola: ok")
+        logger.info("Modello pronto in memoria (%.0f s).", time.time() - started)
+    except Exception as e:
+        logger.warning("Riscaldamento del modello non riuscito (%s). Il primo messaggio sarà lento o fallirà finché Ollama non risponde.", e)
+
+
 def get_llm(provider: Optional[str] = None) -> BaseChatModel:
     """
     Factory function to retrieve the configured ChatModel.
@@ -221,11 +300,12 @@ def get_llm(provider: Optional[str] = None) -> BaseChatModel:
         logger.info("Using MockChatModel (offline/test mode)")
         return MockChatModel()
 
-    logger.info(
-        f"Using local ChatOllama with model='{settings.OLLAMA_MODEL}' at {settings.OLLAMA_BASE_URL}"
-    )
+    model, supports_thinking = resolve_ollama_model()
     return ChatOllama(
-        model=settings.OLLAMA_MODEL,
+        model=model,
         base_url=settings.OLLAMA_BASE_URL,
-        temperature=settings.LLM_TEMPERATURE
+        temperature=settings.LLM_TEMPERATURE,
+        keep_alive=settings.OLLAMA_KEEP_ALIVE,
+        reasoning=effective_reasoning(supports_thinking),
+        client_kwargs={"timeout": settings.OLLAMA_TIMEOUT_S},
     )

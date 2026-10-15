@@ -266,7 +266,24 @@ def step_requirements(python: str) -> tuple[bool, list[str]]:
                 [python, "-m", "pip", "install", "-e", str(proj.parent)], timeout=600)
             if code != 0:
                 log(f"AVVISO: editable install ./{pkg} fallita (non fatale).")
-    return True, optional_failed
+    return step_spacy_model(python), optional_failed
+
+
+SPACY_MODEL = "it_core_news_md"
+
+
+def step_spacy_model(python: str) -> bool:
+    """Modello italiano di spaCy per il CHAT (anonimizzatore): non e' in requirements.txt, si scarica a parte."""
+    code, _ = run([python, "-c", f"import spacy; spacy.load('{SPACY_MODEL}')"], timeout=180)
+    if code == 0:
+        log(f"modello spaCy {SPACY_MODEL} gia' presente.")
+        return True
+    log(f"scarico il modello italiano di spaCy ({SPACY_MODEL}, ~40 MB, serve al CHAT) ...")
+    if run_live([python, "-m", "spacy", "download", SPACY_MODEL], timeout=900) != 0:
+        log(f"ERRORE: download del modello spaCy fallito, il CHAT non partirebbe. Riprova: {python} -m spacy download {SPACY_MODEL}")
+        return False
+    log(f"modello spaCy {SPACY_MODEL} pronto.")
+    return True
 
 
 def ollama_bin() -> str | None:
