@@ -70,3 +70,11 @@ multilingual by the customer's language, asks about a room before confirming. Th
 4 s after the spoken final yes; orb without halo/ring/hint text; live transcript only in local test mode. ~166 tests.
 To do (BE team): adopt the voice prompt in `backend/graph/prompts.py`; "ask the surname only when a similar booking exists"
 needs the BE (voice cannot see other customers' bookings); the BE assigns a room even when none is asked.
+
+## Handoff 2026-10-15 (night 2) — VOICE: weak-PC mode, context windows, from VOICE to team
+New (voice only): the voice bot refreshes the BE session every 20 exchanges (spoken recap), warns at the 3rd refresh and ends
+the call at the 4th (`call_ended`); start-up warm-up turn to the BE (`WARM_BACKEND`); `voice/local_llm/Modelfile` = same gemma4
+with an 8k context for weak PCs. Measured on a laptop CPU: first BE turn ~70 s, next ones ~3 s. ~172 tests.
+To do (BE team): in that run the BE answered some turns with text like "Chiamo get_menu con is_vegetarian=true." instead of
+executing the tool (8B model, long prompt) - worth checking `backend/graph`; the BE could also warm its own prompt at start-up and
+set `num_ctx` explicitly.

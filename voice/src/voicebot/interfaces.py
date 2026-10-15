@@ -81,6 +81,8 @@ class AbstractLLMOrchestrator(ABC):
     # Set by the session: lets the conversation tell the UI about structured facts
     # (customer registered, reservation created/updated/cancelled).
     on_event: Callable[[dict[str, str]], Awaitable[None]] | None = None
+    # True once the conversation decided to end the call (after its last sentence is spoken).
+    ended: bool = False
 
     async def opening(self) -> str:
         """Text the bot says as soon as the call starts (empty = stay silent)."""

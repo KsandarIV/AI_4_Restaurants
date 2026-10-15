@@ -48,6 +48,15 @@ _IT: dict[str, str] = {
     "err_registration_unsupported": "Il server non supporta ancora la registrazione dei clienti.",
     "err_registration_rejected": "Il server ha rifiutato la registrazione.",
     "didnt_hear": "Non ho sentito bene, può ripetere?",
+    "context_reset": (
+        "Mi scusi{call}sto gestendo molte richieste in questo momento, quindi ripartiamo da capo. "
+        "Mi dice che cosa desidera fare: una prenotazione o una modifica?"
+    ),
+    "context_warn": "Tenga presente che a breve potrei dover ricominciare tutto da capo.",
+    "context_end": (
+        "Mi scusi{call}ho raggiunto il limite di questa conversazione e devo chiudere. "
+        "Tocchi di nuovo il cerchio quando vuole ricominciare: a presto!"
+    ),
     "digit_sep": ", ",
     "plus": "più",
     # --- final spoken report after a booking (built from the BE's data, not by the LLM) ---
@@ -103,6 +112,15 @@ _EN: dict[str, str] = {
     "err_registration_unsupported": "The server does not support customer registration yet.",
     "err_registration_rejected": "The server rejected the registration.",
     "didnt_hear": "I did not hear that well, could you repeat?",
+    "context_reset": (
+        "Sorry{call}I am handling many requests right now, so let us start over. "
+        "What would you like to do: a booking or a change?"
+    ),
+    "context_warn": "Please note that soon I may have to start everything over again.",
+    "context_end": (
+        "Sorry{call}I have reached the limit of this conversation and I must hang up. "
+        "Tap the circle again whenever you want to start over: see you soon!"
+    ),
     "digit_sep": ", ",
     "plus": "plus",
     # --- final spoken report after a booking (built from the BE's data, not by the LLM) ---

@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     llm_system_prompt: str = Field(default="")
     llm_max_history: int = Field(default=12)
     llm_token_timeout_s: float = Field(default=120.0)
+    # The BE keeps the whole dialogue as the LLM's context: after this many exchanges without reaching a booking
+    # the voice bot starts a fresh BE session (with a spoken recap); after `context_max_resets` of them it ends the call.
+    context_max_exchanges: int = Field(default=20, ge=4)
+    context_max_resets: int = Field(default=3, ge=0)
 
     # --- Audio ---
     sample_rate: int = Field(default=16000)
@@ -122,6 +126,9 @@ class Settings(BaseSettings):
     # interruption (filters clicks, coughs and speaker echo).
     barge_in_min_ms: int = Field(default=300)
     preload_models: bool = Field(default=True)  # load STT/TTS at startup, not at first call
+    # Send one throw-away turn to the BE at startup: the LLM reads its long prompt once (about a minute on a weak
+    # CPU) and keeps it cached, so the first caller does not wait for it. Needs preload_models.
+    warm_backend: bool = Field(default=True)
     log_level: str = Field(default="INFO")
 
     @property

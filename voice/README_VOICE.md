@@ -140,6 +140,25 @@ asks about a room before confirming, refuses past dates. The BE only reads the l
 specification for the BE team until `backend/graph/prompts.py` adopts it. Speech recognition stays tied to
 `STT_LANGUAGE` / `VOICE_LANGUAGE`: other languages are understood by the LLM only if Whisper transcribes them.
 
+## Weak PC (laptop CPU, no GPU): context, speed, warm-up
+
+Measured on an i5-1235U (12 threads), `gemma4` 8B Q4: the LLM reads its prompt at ~36 tokens/s and writes ~7 tokens/s.
+The first BE turn after start-up costs ~70 s (it reads the long system prompt + tools once); once that prefix is cached
+the next turns take ~3 s. So:
+
+- **Lighter model, same weights** (nothing is downloaded): `ollama create gemma4-voice -f voice/local_llm/Modelfile`
+  (context 8192 instead of 64k, 6 threads so Whisper keeps some cores), then `OLLAMA_MODEL=gemma4-voice` in the `.env` of
+  the machine that runs the BE (and `OLLAMA_TIMEOUT_S=300` for the very first turn).
+- **Warm-up** (`WARM_BACKEND=true`): at start-up the voice server sends one throw-away turn to the BE
+  (session `voice_warmup`, customer `anon_warmup`), so the first caller does not pay the ~70 s.
+- **Context management** (the BE keeps the dialogue as the LLM's context): every `CONTEXT_MAX_EXCHANGES` (20) BE turns
+  without reaching a booking the bot starts a **fresh BE session** and says "sto gestendo molte richieste…, ripartiamo da
+  capo: una prenotazione o una modifica?" (the customer stays registered: nobody repeats name or phone). The 3rd refresh adds
+  "a breve potrei dover ricominciare tutto da capo"; the **4th** ends the call (`call_ended` event: the page waits for the last
+  sentence, then hangs up) until the caller taps the orb again. Reaching a booking resets the counters, and the caller's final
+  "yes" starts a fresh session, so the next request begins with an empty context. `CONTEXT_MAX_RESETS` (3) is the number of
+  refreshes before the end.
+
 ## Core loop (producer–consumer)
 
 ```

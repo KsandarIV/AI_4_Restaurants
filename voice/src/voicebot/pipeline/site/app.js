@@ -278,6 +278,40 @@
   let flash = 0, flashRed = 0;
   // ---- orb liquido: blob seno/coseno + puntini orbitali ----
   const CX = 260, CY = 260, R = 150;
+  // ---- golden ring: thin and slowly turning at rest; thickens with a widening light band when the bot is
+  // about to speak (reply received, audio not started); ripples like a liquid edge, out of step with the orb, while it speaks
+  const RING_R = R + 44;
+  let ringW = 5, ringLight = 0.45, ringAmp = 0, ringSpin = 0, ringPhase = 0, preparingSince = 0;
+  const ease = (cur, target, k) => cur + (target - cur) * k;
+  function ringWave(theta, t) {  // different frequencies and phases than the orb's wave(): never in sync
+    return Math.sin(2 * theta - t * 1.3) * 0.5 + Math.sin(4 * theta + t * 2.1 + 1.7) * 0.32 + Math.cos(7 * theta - t * 1.1) * 0.18;
+  }
+  function drawRing(t, now) {
+    const preparing = preparingSince && mode !== "speaking" ? Math.min(1, (now - preparingSince) / 1400) : 0;
+    if (preparingSince && now - preparingSince > 9000) preparingSince = 0;  // reply without audio: do not stay thick
+    const speaking = mode === "speaking";
+    ringW = ease(ringW, speaking ? 18 : 5 + 17 * preparing, 0.07);
+    ringLight = ease(ringLight, speaking ? 0.7 : 0.45 + 0.4 * preparing, 0.07);
+    ringAmp = ease(ringAmp, speaking ? 13 : 0, 0.06);
+    ringSpin += (speaking ? 0.012 : preparing ? 0.008 : 0.0035);
+    ringPhase = ringSpin;
+    const pts = [];
+    for (let i = 0; i <= 160; i++) {
+      const th = (i / 160) * Math.PI * 2;
+      const rr = RING_R + ringAmp * ringWave(th + ringPhase * 0.4, t);
+      pts.push([CX + rr * Math.cos(th), CY + rr * Math.sin(th)]);
+    }
+    const path = () => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); };
+    const shade = (a, b) => {  // a turning two-tone gradient, so the rotation is visible
+      if (!g.createConicGradient) return a;
+      const c = g.createConicGradient(ringPhase, CX, CY);
+      c.addColorStop(0, a); c.addColorStop(0.5, b); c.addColorStop(1, a);
+      return c;
+    };
+    g.lineJoin = "round";
+    path(); g.lineWidth = ringW; g.strokeStyle = shade("#7a5a14", "#a8821f"); g.stroke();            // thick dark gold edges
+    path(); g.lineWidth = Math.max(1.5, ringW * ringLight); g.strokeStyle = shade("#f6dd8f", "#e3b84d"); g.stroke();  // light inside
+  }
   const dots = Array.from({ length: 16 }, (_, i) => {
     const base = R * (0.78 + Math.random() * 0.34);
     return {
@@ -328,6 +362,7 @@
       g.fillStyle = `rgba(255,255,255,${Math.min(0.95, d.o + 0.15)})`;
       g.fill();
     }
+    drawRing(t, tms);
     // increspature a ogni pacchetto audio ricevuto (sta parlando)
     ripples = ripples.filter(rp => rp.a > 0.02);
     for (const rp of ripples) {
@@ -389,7 +424,7 @@
   function hideToast() { clearTimeout(toastTimer); $("toast").hidden = true; }
 
   function onMessage(ev) {
-    if (typeof ev.data !== "string") { ripples.push({ r: R + 10, a: 0.6 }); playQ.push(ev.data); playLoop(); return; }
+    if (typeof ev.data !== "string") { preparingSince = 0; ripples.push({ r: R + 10, a: 0.6 }); playQ.push(ev.data); playLoop(); return; }
     let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
     switch (m.event) {
       case "ready":
@@ -399,8 +434,8 @@
       case "heard": mode = "heard"; setState("st_heard"); break;
       case "transcript": logLine("user", m.text); break;
       case "thinking": mode = "thinking"; setState("st_thinking"); break;
-      case "reply": logLine("bot", m.text); break;
-      case "barge_in": stopPlayback(); flash = 1; mode = "listening"; setState("st_listening"); break;
+      case "reply": logLine("bot", m.text); preparingSince = performance.now(); break;  // the bot is about to speak
+      case "barge_in": stopPlayback(); preparingSince = 0; flash = 1; mode = "listening"; setState("st_listening"); break;
       case "registered": store.customer_id = m.customer_id; save(store); break;
       case "reservation":
         if (m.customer_id) { store.customer_id = m.customer_id; }
@@ -408,6 +443,11 @@
                  table: m.table, location: m.location });
         if (String(m.status).toUpperCase() === "CANCELLED") hideToast(); else showToast(m);
         break;
+      case "call_ended": {  // the conversation ended the call: let the last sentence finish, then hang up
+        const wait = setInterval(() => { if (!playing && !playQ.length) { clearInterval(wait); hangUp(); } }, 200);
+        setTimeout(() => clearInterval(wait), 15000);
+        break;
+      }
       case "reservation_confirmed": toastTimer = setTimeout(hideToast, TOAST_MS); break;  // the caller said the final yes
       case "error": flashRed = 1; setState("st_error", { d: (m.detail || "error") + (m.message ? " " + m.message : "") }); break;
       default: break;
@@ -452,7 +492,7 @@
   }
   function hangUp() {
     const was = wantLive;
-    wantLive = false; live = false; clearTimeout(retryTimer); stopPlayback(); level = 0; mode = "idle"; hideToast();
+    wantLive = false; live = false; clearTimeout(retryTimer); stopPlayback(); level = 0; mode = "idle"; hideToast(); preparingSince = 0;
     try { if (ws) ws.close(); } catch (e) { /* closing */ }
     try { if (proc) proc.disconnect(); if (stream) stream.getTracks().forEach((x) => x.stop()); if (ctx) ctx.close(); } catch (e) { /* closing */ }
     ws = proc = stream = ctx = null;

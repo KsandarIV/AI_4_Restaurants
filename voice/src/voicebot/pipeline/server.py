@@ -28,7 +28,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from ..backend import BackendClient
+from ..backend import BackendClient, BackendError
 from ..config import Settings, get_settings
 from ..diagnostics import collect_diagnostics
 from ..interfaces import AbstractLLMOrchestrator, AbstractSTT, AbstractTTS
@@ -95,6 +95,23 @@ class Models:
                 await asyncio.wait_for(closer(), timeout=5.0)
 
 
+async def warm_backend(settings: Settings) -> None:
+    """One throw-away BE turn so the LLM has already read its prompt when the first caller speaks."""
+    backend = BackendClient(
+        base_url=settings.backend_base_url,
+        timeout_s=settings.backend_timeout_s,
+        api_key=settings.backend_api_key,
+        chat_timeout_s=max(settings.backend_chat_timeout_s, 300.0),
+    )
+    try:
+        await backend.chat("Buongiorno", "voice_warmup", "anon_warmup")
+        log.info("backend warmed up")
+    except BackendError as exc:
+        log.info("backend warm-up skipped kind=%s status=%s", exc.kind, exc.status)
+    finally:
+        await backend.aclose()
+
+
 def make_orchestrator(settings: Settings) -> AbstractLLMOrchestrator:
     """The chat bot's conversation, bound to this caller (one BE client per call)."""
     backend = BackendClient(
@@ -110,6 +127,8 @@ def make_orchestrator(settings: Settings) -> AbstractLLMOrchestrator:
         max_history=settings.llm_max_history,
         language=settings.voice_language,
         require_registration=settings.require_registration,
+        max_exchanges=settings.context_max_exchanges,
+        max_resets=settings.context_max_resets,
     )
 
 
@@ -169,9 +188,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if settings.preload_models:
             models.start()  # background: /health answers immediately, /ready flips when loaded
+            if settings.warm_backend:
+                warm_task = asyncio.ensure_future(warm_backend(settings))
         try:
             yield
         finally:
+            if settings.preload_models and settings.warm_backend:
+                warm_task.cancel()
             await models.close()
 
     app = FastAPI(title="Voice bot - Trattoria Bella Napoli", lifespan=lifespan)

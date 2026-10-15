@@ -43,6 +43,7 @@ def _hermetic_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[N
         "TTS_BACKEND": "fake",
         "VOICE_LANGUAGE": "it",
         "REQUIRE_REGISTRATION": "true",
+        "WARM_BACKEND": "false",
         "CHAT_SERVICE_URL": "",
         "LLM_SYSTEM_PROMPT": "",
         "VOICE_SETUP_SKIP": "1",

@@ -150,6 +150,8 @@ def build_conversation(settings: Settings) -> AbstractLLMOrchestrator:
         max_history=settings.llm_max_history,
         language=settings.voice_language,
         require_registration=settings.require_registration,
+        max_exchanges=settings.context_max_exchanges,
+        max_resets=settings.context_max_resets,
     )
 
 
@@ -195,6 +197,8 @@ async def amain(args: argparse.Namespace) -> int:
                     continue
                 reply = await conversation.reply(heard)
                 await say_aloud(reply)
+                if conversation.ended:
+                    break
                 continue
             print("[v2] listening...")
             pcm = await asyncio.to_thread(

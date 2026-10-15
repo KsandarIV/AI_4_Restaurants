@@ -1,0 +1,10 @@
+# Lighter local copy of gemma4 for a weak PC (laptop CPU, no GPU): same weights, nothing is downloaded.
+#   ollama create gemma4-voice -f voice/local_llm/Modelfile
+# then, in the .env of the PC that runs the BE:  OLLAMA_MODEL=gemma4-voice
+FROM gemma4:latest
+# the voice dialogue is reset every 20 exchanges (see README_VOICE.md), so 8k tokens are plenty; the default of 64k
+# only costs memory and speed
+PARAMETER num_ctx 8192
+# leave some cores to the speech recogniser (Whisper) that runs on the same machine
+PARAMETER num_thread 6
+PARAMETER num_predict 300

@@ -47,7 +47,7 @@ async def stub_be() -> AsyncIterator[tuple[str, StubState]]:
 
 
 def make_orchestrator(
-    base_url: str, language: str = "it", require_registration: bool = True
+    base_url: str, language: str = "it", require_registration: bool = True, **kwargs: int
 ) -> BackendOrchestrator:
     """The production orchestrator against a (stub) BE; NER off so tests are deterministic."""
     return BackendOrchestrator(
@@ -55,6 +55,7 @@ def make_orchestrator(
         language=language,
         require_registration=require_registration,
         use_ner=False,
+        **kwargs,
     )
 
 

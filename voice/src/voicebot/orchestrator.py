@@ -65,6 +65,8 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         language: str = "it",
         require_registration: bool = True,
         use_ner: bool | None = None,
+        max_exchanges: int = 20,
+        max_resets: int = 3,
     ) -> None:
         self._backend = backend
         self._system = build_system_prompt(system_prompt)
@@ -72,6 +74,8 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         self._language = normalize_language(language)
         self._require_registration = require_registration
         self._use_ner = use_ner
+        self._max_exchanges = max_exchanges
+        self._max_resets = max_resets
         self.history: list[ChatMessage] = []
         self._start()
 
@@ -87,6 +91,9 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         self._pending: str | None = None  # the booking request that triggered the registration
         self._replay: str | None = None  # ...ready to be sent to the BE once registered
         self._area_said = False  # the caller asked for a room (terrazza, giardino...) in this booking
+        self._exchanges = 0  # BE turns in the current BE session (= the LLM's context grows with them)
+        self._resets = 0  # times the context was refreshed without reaching a booking
+        self.ended = False  # the call must be closed after the last sentence
         self.history = [ChatMessage(role="system", content=self._system)]
         self._reported: dict[str, tuple[Any, ...]] = {}  # booking code -> details already read aloud
         self._awaiting_final: str | None = None  # code waiting for the caller's last "yes"
@@ -122,6 +129,7 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         return await self._backend_reply(user_text)
 
     async def _backend_reply(self, user_text: str) -> str:
+        self._exchanges += 1
         anonymized = await self._anonymize(user_text)
         try:
             data = await self._backend.chat(anonymized, self.session_id, self.customer_id)
@@ -150,6 +158,7 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
             yield piece
 
     async def _backend_stream(self, user_text: str) -> AsyncIterator[str]:
+        self._exchanges += 1
         anonymized = await self._anonymize(user_text)
         restorer = self.anonymizer.stream_restorer()
         spoken: list[str] = []
@@ -193,6 +202,8 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
     async def _local_turn(self, user_text: str) -> str | None:
         """Handle turns that never reach the LLM. Returns None for a normal CHAT turn."""
         text = user_text.strip()
+        if self.ended:
+            return ""  # the call is closing: nothing more is processed
         if not text:
             return say(self._language, "didnt_hear")
         if self.phase is Phase.CHAT and _AREA_WORDS.search(text):
@@ -219,14 +230,46 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
             who = self._who()
             if is_plain_yes(text):
                 await self._emit_event({"event": "reservation_confirmed"})  # the page closes its pop-up
+                self._fresh_session()  # goal reached: the next request starts with an empty LLM context
                 reply = say(self._language, "final_ok", who=who)
             elif is_plain_no(text):
                 reply = say(self._language, "final_no")
-            else:
-                return None  # a correction or a new request: the BE agent handles it
+            else:  # a correction or a new request: the BE agent handles it
+                return self._rotate_if_full()
             self._remember("assistant", reply)
             return reply
-        return None
+        return self._rotate_if_full()
+
+    def _fresh_session(self) -> None:
+        """A new BE session: the LLM starts again with an empty context (the customer stays the same)."""
+        self.session_id = f"voice_{uuid.uuid4().hex[:8]}"
+        self._exchanges = 0
+        self._awaiting_final = None
+        self.history = [self.history[0]]
+
+    def _rotate_if_full(self) -> str | None:
+        """When the LLM's context is full: refresh it with a spoken recap, or end the call.
+
+        Returns the sentence to say, or None while there is still room (the BE then answers).
+        The customer stays registered, so nobody has to repeat name or phone.
+        """
+        if self._exchanges < self._max_exchanges:
+            return None
+        self._resets += 1
+        lang = self._language
+        first = (self.dialog.name or "").split(" ")[0] if self.registered else ""
+        call = f" {first}, " if first else ", "
+        if self._resets > self._max_resets:
+            self.ended = True
+            reply = say(lang, "context_end", call=call)
+        else:
+            self._fresh_session()
+            reply = say(lang, "context_reset", call=call)
+            if self._resets == self._max_resets:
+                reply += " " + say(lang, "context_warn")
+        log.info("context full: refresh #%d ended=%s", self._resets, self.ended)
+        self._remember("assistant", reply)
+        return reply
 
     def _take_replay(self) -> str | None:
         """The booking request to send to the BE now (once), or None."""
@@ -282,6 +325,7 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
             "area": spoken_area(res.get("table_location"), self._language) if self._area_said else "",
         })
         self._area_said = False
+        self._resets = 0  # a booking was reached: the context counters start over
         lang, who = self._language, self._who()
         if status == "CANCELLED":
             self._awaiting_final = None

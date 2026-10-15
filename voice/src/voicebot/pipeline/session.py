@@ -254,6 +254,15 @@ class VoiceSession:
                     await self._run_turn(_single(opening), thinking=False)
                 continue
             await self._run_turn(self.llm.stream_reply(user_text), thinking=True)
+            if self.llm.ended:
+                await self._finish_call()
+
+    async def _finish_call(self) -> None:
+        """The conversation asked to end the call: tell the client once the last sentence has been played."""
+        loop = asyncio.get_running_loop()
+        await asyncio.sleep(max(0.0, self._playback_until - loop.time()) + 0.5)
+        log.info("call ended by the conversation session=%s", self.session_id)
+        await self._emit({"event": "call_ended"})
 
     async def _run_turn(self, tokens: AsyncIterator[str], thinking: bool) -> None:
         """Run one turn as its own task so a barge-in can cancel it at any moment."""
