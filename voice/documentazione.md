@@ -123,4 +123,6 @@ python setup\setup_env.py
 copy .env.example .env        & REM imposta BACKEND_BASE_URL
 .venv\Scripts\python -m voicebot
 REM WS: ws://localhost:8003/ws/voice | Tech page: http://localhost:8003/tech
+REM Prova vocale (mic, solo localhost): http://localhost:8003/prova-vocale
+REM Voce da QUALUNQUE pc (mic locale, niente browser): .venv\Scripts\python -m voicebot.v2
 ```

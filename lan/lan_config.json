@@ -5,16 +5,30 @@
   "_regola": "Il BE parte PER PRIMO e deve restare su: senza BE, chat e voice non possono funzionare (lo script li fa attendere il BE prima di avviarsi).",
   "be": {
     "macchina": "BE",
-    "fa": "Avvia il codice in backend/ (API FastAPI + LangGraph + SQLite + Ollama). Fulcro: deve partire assolutamente e restare su.",
+    "fa": "Avvia il codice in backend/ (API FastAPI + LangGraph + SQLite + Ollama) + sito vetrina :8080. Fulcro: deve partire assolutamente e restare su.",
     "cartella": "backend/",
     "host": "192.168.1.10",
     "port": 8000,
     "health": "/api/health",
-    "start": { "cwd": ".", "argv": [".venv/Scripts/python.exe", "-m", "backend.main"] }
+    "start": {
+      "cwd": ".",
+      "argv": [".venv/Scripts/python.exe", "-m", "backend.main"],
+      "extra": [
+        {
+          "nome": "sito frontend (:8080)",
+          "fa": "Sito vetrina: servito dal BE, chiama chat/voice sulle altre macchine",
+          "cwd": ".",
+          "port": 8080,
+          "health": "/",
+          "argv": [".venv/Scripts/python.exe", "-m", "http.server", "8080",
+                   "--directory", "frontend"]
+        }
+      ]
+    }
   },
   "chat": {
     "macchina": "CHAT",
-    "fa": "Avvia il codice in chat/ (Streamlit). Parte SOLO dopo che il BE risponde (attesa automatica).",
+    "fa": "Avvia il codice in chat/ (Streamlit + API :8002 usata dal sito sul BE). Parte SOLO dopo che il BE risponde (attesa automatica).",
     "cartella": "chat/",
     "host": "192.168.1.11",
     "port": 8501,
@@ -27,16 +41,13 @@
       "extra": [
         {
           "nome": "api chat per il sito (:8002)",
+          "fa": "API del sito (chat/api.py): il sito sul BE chiama qui",
           "cwd": "chat",
+          "port": 8002,
+          "health": "/health",
           "argv": [".venv/Scripts/python.exe", "-m", "uvicorn", "api:app",
                    "--host", "0.0.0.0", "--port", "8002"],
           "env": { "BE_URL": "http://192.168.1.10:8000" }
-        },
-        {
-          "nome": "sito frontend (:8080)",
-          "cwd": ".",
-          "argv": [".venv/Scripts/python.exe", "-m", "http.server", "8080",
-                   "--directory", "frontend"]
         }
       ]
     }
