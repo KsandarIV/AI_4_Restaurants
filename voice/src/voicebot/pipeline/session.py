@@ -114,6 +114,17 @@ class VoiceSession:
 
     # ---------------- stages ----------------
 
+    async def _emit(self, payload: dict[str, str]) -> None:
+        """Notifica il client (heard/thinking/barge_in): il browser anima gli stati."""
+        if self.on_control is None:
+            return
+        try:
+            res = self.on_control(payload)
+            if asyncio.isfuture(res) or asyncio.iscoroutine(res):
+                await res  # type: ignore[no-any-return]
+        except Exception as exc:
+            log.warning("control cb err session=%s err=%s", self.session_id, exc)
+
     async def _vad_loop(self) -> None:
         """Consume frames; emit segments; detect barge-in on speech_start."""
         try:
@@ -136,6 +147,7 @@ class VoiceSession:
                     await self._handle_barge_in()
                 elif event.kind == "speech_end" and event.pcm:
                     await self.segment_q.put(event.pcm)
+                    await self._emit({"event": "heard"})
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -188,10 +200,14 @@ class VoiceSession:
         log.info("turn start session=%s text=%r", self.session_id, user_text[:120])
 
         async def pump_tokens() -> None:
+            first = True
             try:
                 async for token in self.llm.stream_reply(user_text):
                     if gen != self._gen:
                         break  # stale turn after barge-in
+                    if first:
+                        first = False
+                        await self._emit({"event": "thinking"})
                     await token_q.put(token)
             except asyncio.CancelledError:
                 raise
@@ -252,10 +268,4 @@ class VoiceSession:
                 break
         self.speaking_event.clear()
         log.info("barge_in session=%s drained=%d", self.session_id, drained)
-        if self.on_control is not None:
-            try:
-                res = self.on_control({"event": "barge_in"})
-                if asyncio.isfuture(res) or asyncio.iscoroutine(res):
-                    await res  # type: ignore[no-any-return]
-            except Exception as exc:
-                log.warning("control cb err session=%s err=%s", self.session_id, exc)
+        await self._emit({"event": "barge_in"})

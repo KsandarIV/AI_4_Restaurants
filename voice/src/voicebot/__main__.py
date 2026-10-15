@@ -37,7 +37,7 @@ def main() -> None:
         "voicebot.pipeline.server:app",
         host=settings.voice_host,
         port=settings.voice_port,
-        ws="websockets",
+        ws="auto",
         timeout_graceful_shutdown=10,
     )
 

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice-bot — Come è fatto il codice</title>
+<style>
+  :root { --bg:#fffaf3; --surface:#fff; --text:#2b211b; --muted:#6e5f55;
+    --accent:#b3341f; --line:#eadfce; --hero:#3a1f14; --radius:14px; }
+  body { margin:0; font-family:Georgia,serif; color:var(--text); background:var(--bg); line-height:1.65; }
+  .topbar { position:sticky; top:0; display:flex; gap:20px; align-items:center; padding:12px 24px; background:rgba(255,250,243,.95); border-bottom:1px solid var(--line); font-family:system-ui,sans-serif; }
+  .brand { font-weight:bold; color:var(--accent); text-decoration:none; margin-right:auto; font-size:1.2rem; }
+  main { max-width:980px; margin:0 auto; padding:24px 24px 70px; }
+  h1 { font-size:2rem; } h2 { color:var(--accent); border-bottom:2px solid var(--accent); padding-bottom:4px; margin-top:36px; }
+  p.sub { color:var(--muted); }
+  svg { width:100%; height:auto; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); }
+  table { border-collapse:collapse; width:100%; font-size:.95rem; margin:12px 0; font-family:system-ui,sans-serif; }
+  th,td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--surface); } td:first-child { white-space:nowrap; }
+  code { background:#f4f6f8; padding:1px 5px; border-radius:4px; font-size:.88em; }
+  .toolbar { position:sticky; top:53px; background:#fff; padding:8px 0; border-bottom:1px solid var(--line); font-family:system-ui,sans-serif; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:8px 16px; cursor:pointer; }
+  a { color:var(--accent); }
+  @media print { .toolbar,.topbar { display:none; } }
+</style>
+</head>
+<body>
+<header class="topbar"><a class="brand" href="/prova-vocale">Bella Napoli · Voce</a>
+  <a href="/tech">Scheda tecnica</a><a href="/tech-idea">Versione semplice</a></header>
+<div class="toolbar"><main style="padding:0 24px">
+  <button onclick="window.print()">Stampa / Salva PDF</button></main></div>
+<main>
+  <h1>Come è fatto il codice del voice-bot</h1>
+  <p class="sub">La pipeline audio spiegata pezzo per pezzo: ogni tappa dice <b>quale file</b> la fa e
+  <b>con quali code</b> parla alle altre. In gergo: produttore-consumatore su <code>asyncio.Queue</code>.</p>
+
+  <h2>Il giro di una frase</h2>
+  <svg viewBox="0 0 960 300" role="img" aria-label="pipeline con file">
+    <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#b3341f"/></marker></defs>
+    <g font-family="system-ui,sans-serif" font-size="12" text-anchor="middle">
+      <rect x="10" y="30" width="150" height="86" rx="10" fill="#fff" stroke="#b3341f" stroke-width="2"/><text x="85" y="52"><tspan font-weight="bold">server.py</tspan></text><text x="85" y="68">lettore WS</text><text x="85" y="84" fill="#6e5f55">audio_in_q</text><text x="85" y="100" fill="#6e5f55">PCM 20 ms</text>
+      <rect x="182" y="30" width="150" height="86" rx="10" fill="#fff" stroke="#b3341f" stroke-width="2"/><text x="257" y="52"><tspan font-weight="bold">vad.py</tspan></text><text x="257" y="68">EnergyVAD</text><text x="257" y="84" fill="#6e5f55">segment_q</text><text x="257" y="100" fill="#6e5f55">frasi intere</text>
+      <rect x="354" y="30" width="150" height="86" rx="10" fill="#fff" stroke="#b3341f" stroke-width="2"/><text x="429" y="52"><tspan font-weight="bold">stt.py</tspan></text><text x="429" y="68">Whisper loc.</text><text x="429" y="84" fill="#6e5f55">text_q</text><text x="429" y="100" fill="#6e5f55">testo</text>
+      <rect x="526" y="30" width="170" height="86" rx="10" fill="#fff" stroke="#b3341f" stroke-width="2"/><text x="611" y="52"><tspan font-weight="bold">orchestrator.py</tspan></text><text x="611" y="68">+ backend.py SSE</text><text x="611" y="84" fill="#6e5f55">token_q</text><text x="611" y="100" fill="#6e5f55">parole in arrivo</text>
+      <rect x="718" y="30" width="150" height="86" rx="10" fill="#fff" stroke="#b3341f" stroke-width="2"/><text x="793" y="52"><tspan font-weight="bold">tts.py</tspan></text><text x="793" y="68">Piper loc.</text><text x="793" y="84" fill="#6e5f55">audio_out_q</text><text x="793" y="100" fill="#6e5f55">voce</text>
+      <rect x="354" y="170" width="342" height="70" rx="10" fill="#ffe9e9" stroke="#c00" stroke-width="2"/><text x="525" y="194"><tspan font-weight="bold">barge-in (session.py)</tspan></text><text x="525" y="212" fill="#6e5f55">nuova voce + sto parlando → cancello il turno, svuoto audio_out_q</text>
+    </g>
+    <g stroke="#b3341f" stroke-width="2">
+      <line x1="160" y1="73" x2="180" y2="73" marker-end="url(#a)"/><line x1="332" y1="73" x2="352" y2="73" marker-end="url(#a)"/><line x1="504" y1="73" x2="524" y2="73" marker-end="url(#a)"/><line x1="696" y1="73" x2="716" y2="73" marker-end="url(#a)"/>
+      <line x1="200" y1="150" x2="200" y2="168" marker-end="url(#a)" stroke="#c00"/><line x1="793" y1="116" x2="793" y2="168" marker-end="url(#a)" stroke="#c00"/>
+    </g>
+    <text x="480" y="270" font-size="12" fill="#555" text-anchor="middle" font-family="system-ui,sans-serif">tre compiti sempre accesi (VAD, STT, LLM) · code limitate = niente memoria che esplode · tutto annullabile</text>
+  </svg>
+
+  <h2>File per file, in una riga</h2>
+  <table>
+    <tr><th>File</th><th>Ruolo spiegato semplice</th></tr>
+    <tr><td><code>pipeline/server.py</code></td><td>La porta d'ingresso: WebSocket col browser + pagine <code>/prova-vocale</code> e <code>/tech*</code>.</td></tr>
+    <tr><td><code>pipeline/session.py</code></td><td>Il direttore d'orchestra: tre compiti in parallelo, code tra loro, interruzione e spegnimento pulito.</td></tr>
+    <tr><td><code>vad.py</code></td><td>Le orecchie: capisce quando parli e quando fai pausa (niente pulsanti).</td></tr>
+    <tr><td><code>stt.py</code></td><td>Il traduttore in entrata: voce → testo con Whisper, sul posto.</td></tr>
+    <tr><td><code>orchestrator.py</code></td><td>Il regista: ricorda la conversazione, scorciatoie veloci (menu, orari), dialogo col BE.</td></tr>
+    <tr><td><code>backend.py</code></td><td>Il telefono col server centrale: invia testo anonimo, riceve parole in streaming.</td></tr>
+    <tr><td><code>tts.py</code></td><td>La voce: testo → audio italiano con Piper, frase per frase mentre arriva.</td></tr>
+    <tr><td><code>pii.py</code></td><td>La privacy: cancella email/telefoni prima di inviare qualsiasi cosa.</td></tr>
+    <tr><td><code>config.py</code></td><td>Le manopole: un solo <code>.env</code> in root per tutto.</td></tr>
+  </table>
+
+  <h2>Perché è fatto così</h2>
+  <p>Ogni tappa lavora <b>mentre</b> le altre vanno avanti (niente attese a catena): la voce
+  parte prima che la frase sia finita, e se interrompi si butta solo il turno corrente.
+  Le interfacce astratte (<code>AbstractSTT</code> ecc.) permettono di cambiare modello
+  senza toccare la pipeline — utile in demo e in produzione.</p>
+</main>
+</body>
+</html>

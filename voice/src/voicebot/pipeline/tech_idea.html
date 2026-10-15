@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bella Napoli — L'idea in parole semplici</title>
+<style>
+  :root { --bg:#fffaf3; --surface:#fff; --text:#2b211b; --muted:#6e5f55;
+    --accent:#b3341f; --line:#eadfce; --hero:#3a1f14; --radius:14px; }
+  body { margin:0; font-family:Georgia,serif; color:var(--text); background:var(--bg); line-height:1.7; }
+  .topbar { position:sticky; top:0; display:flex; gap:20px; align-items:center; padding:12px 24px; background:rgba(255,250,243,.95); border-bottom:1px solid var(--line); font-family:system-ui,sans-serif; }
+  .brand { font-weight:bold; color:var(--accent); text-decoration:none; margin-right:auto; font-size:1.2rem; }
+  main { max-width:760px; margin:0 auto; padding:24px 24px 70px; }
+  h1 { font-size:2rem; } h2 { color:var(--accent); margin-top:32px; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px; margin:14px 0; }
+  .card b { display:block; font-size:1.1rem; }
+  .card span { color:var(--muted); }
+  .dialogo { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px; font-family:system-ui,sans-serif; }
+  .dialogo p { margin:8px 0; } .tu { text-align:right; } .tu i { background:#f4e8dc; border-radius:12px; padding:6px 12px; display:inline-block; font-style:normal; }
+  .io i { background:#e8f0e8; border-radius:12px; padding:6px 12px; display:inline-block; font-style:normal; }
+  code { background:#f4f6f8; padding:1px 5px; border-radius:4px; }
+  .toolbar { position:sticky; top:53px; background:#fff; padding:8px 0; border-bottom:1px solid var(--line); font-family:system-ui,sans-serif; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:8px 16px; cursor:pointer; }
+  a { color:var(--accent); }
+  @media print { .toolbar,.topbar { display:none; } }
+</style>
+</head>
+<body>
+<header class="topbar"><a class="brand" href="/prova-vocale">Bella Napoli · Voce</a>
+  <a href="/tech">Scheda tecnica</a><a href="/tech-codice">Come è fatto il codice</a></header>
+<div class="toolbar"><main style="padding:0 24px">
+  <button onclick="window.print()">Stampa / Salva PDF</button></main></div>
+<main>
+  <h1>Prenotare un tavolo parlando: l'idea in parole semplici</h1>
+  <p>Immagina un cameriere attentissimo che non dorme mai, non fraintende gli orari e non
+  dimentica le prenotazioni. Il nostro assistente vocale fa proprio questo, con quattro aiutanti:</p>
+  <div class="card"><b>👂 Le orecchie</b><span>Capiscono quando inizi a parlare e quando fai una pausa. Niente pulsanti: basta parlare.</span></div>
+  <div class="card"><b>✍️ Il traduttore</b><span>Trasforma la tua voce in testo scritto, all'istante, sul nostro computer (niente va su internet).</span></div>
+  <div class="card"><b>🧠 Il cervello</b><span>Legge la richiesta, controlla tavoli liberi, menu e orari, e decide la risposta — come farebbe il migliore dei receptionist.</span></div>
+  <div class="card"><b>🗣️ La voce</b><span>Rilegge la risposta ad alta voce in italiano, iniziando a parlare prima ancora di aver finito di pensare.</span></div>
+
+  <h2>Una telefonata d'esempio</h2>
+  <div class="dialogo">
+    <p class="tu"><i>Vorrei un tavolo per due domani sera.</i></p>
+    <p class="io"><i>Volentieri! Per che ora? E a che nome lo segno?</i></p>
+    <p class="tu"><i>Alle otto, Rossi… no aspetti, alle otto e mezza!</i></p>
+    <p class="io"><i>Nessun problema: tavolo per due domani alle 20:30 a nome Rossi. Codice RES-9A8B2C.</i></p>
+  </div>
+  <p>Nota: quando hai detto “no aspetti”, l'assistente <b>si è fermato e ti ha riascoltato</b> —
+  come una persona educata. E il tuo numero di telefono non è mai uscito dalle nostre macchine.</p>
+
+  <h2>Perché conviene al ristorante</h2>
+  <ul>
+    <li>Risponde sempre, anche a mezzanotte e col telefono che squilla.</li>
+    <li>Niente app da installare per i clienti: basta il sito.</li>
+    <li>Tutto in casa: nessun abbonamento a servizi esterni, nessun dato fuori.</li>
+  </ul>
+</main>
+</body>
+</html>

@@ -176,7 +176,17 @@ def make_stub() -> tuple[ThreadingHTTPServer, str, StubState]:
 
 
 if __name__ == "__main__":
+    import sys
+
+    try:
+        port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+    except ValueError:
+        raise SystemExit("uso: python tests/stub_be.py [porta]  (default 8000)")
     state = StubState()
     Handler.state = state
-    print("Stub BE Voice su http://0.0.0.0:8000  (Ctrl+C per fermare)")
-    ThreadingHTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
+    print(f"Stub BE Voice su http://0.0.0.0:{port}  (Ctrl+C per fermare)")
+    try:
+        ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
+    except OSError as exc:
+        raise SystemExit(f"porta {port} occupata ({exc}): libera la {port} o lancia con un'altra "
+                         f"(es. python tests/stub_be.py 8001)")

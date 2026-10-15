@@ -31,6 +31,22 @@ from .session import VoiceSession
 log = get_logger("server")
 
 
+def _voice_page(path: object, test: bool, be_url: str) -> str:
+    """Rende voice_test.html: titolo VOICE o VOICE/TESTS + banner col BE usato."""
+    from pathlib import Path
+
+    assert isinstance(path, Path)
+    html = path.read_text(encoding="utf-8")
+    if test:
+        banner = (
+            '<div style="background:#3a1f14;color:#fff;text-align:center;padding:8px;'
+            'font-family:system-ui,sans-serif;font-size:.85rem;letter-spacing:.08em">'
+            f"VOICE / TESTS — ambiente di test · BE in uso: {be_url}</div>"
+        )
+        return html.replace("{{TITLE_SUFFIX}}", " / TESTS").replace("{{TEST_BANNER}}", banner)
+    return html.replace("{{TITLE_SUFFIX}}", "").replace("{{TEST_BANNER}}", "")
+
+
 def build_app(settings: Settings | None = None) -> FastAPI:
     """Create the FastAPI app with injected settings (test-friendly)."""
     settings = settings or get_settings()
@@ -40,6 +56,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/", include_in_schema=False)
+    async def root() -> object:
+        """La root redirige alla pagina di test (niente 404 a chi apre l'IP)."""
+        from fastapi.responses import RedirectResponse
+
+        return RedirectResponse(url="/prova-vocale")
 
     @app.get("/tech", response_class=HTMLResponse, include_in_schema=False)
     async def tech_page() -> str:
@@ -53,7 +76,34 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         """Pagina di test microfono (solo localhost/HTTPS per i limiti browser)."""
         from pathlib import Path
 
-        return (Path(__file__).with_name("voice_test.html")).read_text(encoding="utf-8")
+        return _voice_page(Path(__file__).with_name("voice_test.html"), test=False,
+                           be_url=settings.backend_base_url)
+
+    @app.get("/prova-vocale-test", response_class=HTMLResponse, include_in_schema=False)
+    async def voice_test_local_page() -> str:
+        """Variante TEST: stessa pagina, titolo VOICE/TESTS + BE dichiarato.
+
+        Usala puntando QUESTA istanza a un BE locale (stub `tests/stub_be.py`
+        o BE in locale via BACKEND_BASE_URL): dal banner vedi subito quale BE usa.
+        """
+        from pathlib import Path
+
+        return _voice_page(Path(__file__).with_name("voice_test.html"), test=True,
+                           be_url=settings.backend_base_url)
+
+    @app.get("/tech-codice", response_class=HTMLResponse, include_in_schema=False)
+    async def tech_code_page() -> str:
+        """Scheda divulgativa: logica del codice con pipeline e file (per tecnici)."""
+        from pathlib import Path
+
+        return (Path(__file__).with_name("tech_codice.html")).read_text(encoding="utf-8")
+
+    @app.get("/tech-idea", response_class=HTMLResponse, include_in_schema=False)
+    async def tech_idea_page() -> str:
+        """Scheda divulgativa: l'idea in parole semplici (per non tecnici)."""
+        from pathlib import Path
+
+        return (Path(__file__).with_name("tech_idea.html")).read_text(encoding="utf-8")
 
     @app.get("/ready")
     async def ready() -> Any:
@@ -70,6 +120,43 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             return {"status": "ready", "backend": settings.backend_base_url}
         return JSONResponse({"status": "degraded", "backend": settings.backend_base_url}, status_code=503)
 
+    @app.get("/diag")
+    async def diag() -> dict[str, object]:
+        """Diagnosi live per il pannello STATO: voice + BE + modello, in un colpo solo."""
+        import httpx
+
+        be: dict[str, object] = {"ok": False, "detail": "non raggiunto", "model": ""}
+        base = settings.backend_base_url.rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                for path in ("/api/health", "/health"):
+                    try:
+                        resp = await client.get(base + path)
+                    except Exception as exc:
+                        be["detail"] = f"{type(exc).__name__}: {exc}"
+                        continue
+                    if resp.status_code != 200:
+                        be["detail"] = f"HTTP {resp.status_code} su {path}"
+                        continue
+                    try:
+                        body = resp.json()
+                    except ValueError:
+                        body = {}
+                    be = {"ok": True, "detail": f"200 su {path}",
+                          "model": str(body.get("llm_model", body.get("model", "")) or "")}
+                    break
+        except Exception as exc:
+            be["detail"] = f"{type(exc).__name__}: {exc}"
+        return {
+            "voice": "ok",
+            "be_url": base,
+            "be": be,
+            "stt_backend": settings.stt_backend,
+            "tts_backend": settings.tts_backend,
+            "sample_rate": settings.sample_rate,
+            "tts_sample_rate": settings.tts_sample_rate,
+        }
+
     @app.websocket("/ws/voice")
     async def ws_voice(ws: WebSocket) -> None:
         await ws.accept()
@@ -78,7 +165,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         run_task = asyncio.create_task(session.run())
         try:
             await ws.send_text(json.dumps({"event": "ready", "session_id": session.session_id,
-                                           "sample_rate": settings.sample_rate}))
+                                           "sample_rate": settings.sample_rate,
+                                           "tts_sample_rate": settings.tts_sample_rate}))
             await _reader(ws, session, settings)
         except WebSocketDisconnect:
             log.info("ws disconnect session=%s", session.session_id)

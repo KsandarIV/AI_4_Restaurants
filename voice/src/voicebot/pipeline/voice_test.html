@@ -3,70 +3,288 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Voice-bot — Prova vocale</title>
+<title>Bella Napoli — Voce{{TITLE_SUFFIX}}</title>
 <style>
-  body { font-family: Segoe UI, Arial, sans-serif; max-width: 720px; margin: 0 auto; padding: 20px; }
-  h1 { font-size: 20px; } .mut { color: #555; font-size: 13px; }
-  button { font-size: 16px; padding: 10px 22px; border-radius: 8px; border: 0; cursor: pointer; }
-  #talk { background: #0b5cad; color: #fff; } #talk.live { background: #c00; }
-  #stato { background: #f4f6f8; border-radius: 8px; padding: 12px; margin: 12px 0; min-height: 60px; }
-  #vu { height: 12px; background: #eee; border-radius: 6px; overflow: hidden; margin: 8px 0; }
-  #vubar { height: 100%; width: 0%; background: #0b5cad; }
+  :root {
+    --bg: #fffaf3; --surface: #ffffff; --text: #2b211b; --muted: #6e5f55;
+    --accent: #b3341f; --accent-dark: #8a2615; --line: #eadfce; --hero: #3a1f14;
+    --radius: 14px; --shadow: 0 10px 30px rgba(58, 31, 20, .18);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Georgia, "Times New Roman", serif; color: var(--text); background: var(--bg); line-height: 1.6; }
+  .topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 24px; padding: 12px 24px; background: rgba(255,250,243,.95); border-bottom: 1px solid var(--line); }
+  .brand { font-size: 1.4rem; font-weight: bold; color: var(--accent); text-decoration: none; margin-right: auto; }
+  .topbar .pill { font-family: system-ui, sans-serif; font-size: .8rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; }
+  .stage { max-width: 640px; margin: 0 auto; padding: 40px 24px 80px; text-align: center; }
+  .eyebrow { text-transform: uppercase; letter-spacing: .15em; font-size: .8rem; color: var(--muted); font-family: system-ui, sans-serif; }
+  h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin: .3em 0 .2em; }
+  .lead { color: var(--muted); max-width: 520px; margin: 0 auto; }
+  canvas#orb { width: 260px; height: 260px; margin: 20px auto 4px; cursor: pointer; display: block;
+    outline: none; border: 0; background: transparent; border-radius: 50%;
+    -webkit-tap-highlight-color: transparent; user-select: none; }
+  .orb-stage { position: relative; width: 260px; margin: 20px auto 4px; }
+  .orb-stage canvas#orb { margin: 0; }
+  .warn { background: #fff3cd; border: 1px solid #e0a800; border-radius: var(--radius); padding: 12px 16px; max-width: 560px; margin: 14px auto 0; font-family: system-ui, sans-serif; font-size: .9rem; }
+  .meta { font-family: system-ui, sans-serif; font-size: .8rem; color: var(--muted); margin-top: 14px; }
   code { background: #f4f6f8; padding: 1px 5px; border-radius: 4px; }
+  .drawer-tab { position: fixed; right: 0; top: 34%; z-index: 41; writing-mode: vertical-rl;
+    background: var(--hero); color: #fff; border: 0; border-radius: 10px 0 0 10px;
+    padding: 14px 8px; cursor: pointer; font-family: system-ui, sans-serif; font-size: .85rem; letter-spacing: .1em; }
+  .drawer-tab.two { top: 52%; background: var(--accent); }
+  .drawer { position: fixed; top: 0; right: 0; z-index: 40; width: min(380px, 92vw); height: 100vh;
+    background: var(--surface); border-left: 1px solid var(--line); box-shadow: var(--shadow);
+    transform: translateX(105%); transition: transform .3s ease; overflow-y: auto; padding: 20px 22px 40px; }
+  .drawer.open { transform: translateX(0); }
+  .drawer h2 { color: var(--accent); font-size: 1.3rem; margin: 22px 0 8px; }
+  .drawer h2:first-child { margin-top: 4px; }
+  .drawer .close { float: right; border: 1px solid var(--line); background: var(--bg); border-radius: 999px; width: 32px; height: 32px; cursor: pointer; color: var(--text); font-size: 1rem; }
+  .drawer ul { padding-left: 18px; margin: 6px 0; } .drawer li { margin-bottom: 6px; }
+  .diag { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  .diag td { border-bottom: 1px solid var(--line); padding: 6px 4px; vertical-align: top; }
+  .diag td:first-child { color: var(--muted); width: 38%; }
+  .ok { color: #2e8b57; font-weight: bold; } .ko { color: var(--accent); font-weight: bold; }
+  #evlog { list-style: none; padding: 0; margin: 8px 0; max-height: 180px; overflow-y: auto; }
+  #evlog li { font-size: .8rem; border-bottom: 1px dashed var(--line); padding: 3px 0; }
+  #evlog time { color: var(--muted); margin-right: 6px; }
+  .drawer a { color: var(--accent); text-decoration: none; }
+  .drawer a:hover { text-decoration: underline; }
+  .drawer code { background: var(--bg); border: 1px solid var(--line); }
+  .stage { max-width: 560px; margin: 0 auto; padding: 56px 24px 70px; text-align: center; }
 </style>
 </head>
 <body>
-<h1>Voice-bot — prova vocale</h1>
-<div id="sicuro" style="display:none;background:#fff3cd;border:1px solid #e0a800;border-radius:8px;padding:10px;margin:10px 0;">
-⚠️ <b>Il microfono richiede una pagina sicura:</b> apri il sito da
-<code>http://localhost:8003/prova-vocale</code> oppure con HTTPS.
-Da un IP di rete il browser blocca il microfono (non è un nostro bug).
-</div>
-<p class="mut">Parla con naturalezza: puoi <b>interrompere l'assistente mentre risponde</b>.
-Serve il permesso al microfono (il browser lo chiede al primo uso).
-L'audio va al server (<code>/ws/voice</code>, PCM 16 kHz) e la risposta torna qui.
-Da altre macchine senza localhost usa la v2 (<code>python -m voicebot.v2</code>).</p>
-<p>WS: <code id="wsurl"></code></p>
-<button id="talk">🎤 Parla</button>
-<div id="vu"><div id="vubar"></div></div>
-<div id="stato">Premi “Parla”, parla, ripremi per fermare e ascoltare la risposta.</div>
+<header class="topbar">
+  <a class="brand" href="#">Bella Napoli · Voce{{TITLE_SUFFIX}}</a>
+  <span class="pill" id="srv">server: verifica…</span>
+</header>
+{{TEST_BANNER}}
+
+<button class="drawer-tab" id="tab" aria-label="Apri dettagli tecnici">ⓘ TECNICA</button>
+<button class="drawer-tab two" id="tab2" aria-label="Apri stato sistema">◉ STATO</button>
+<aside class="drawer" id="drawer" aria-label="Dettagli tecnici">
+  <button class="close" id="close" aria-label="Chiudi">✕</button>
+  <h2>Schede complete</h2>
+  <ul>
+    <li><a href="/tech-codice"><b>Come è fatto il codice</b></a> — la pipeline disegnata, file per file.</li>
+    <li><a href="/tech-idea"><b>L'idea in parole semplici</b></a> — orecchie, traduttore, cervello e voce.</li>
+    <li><a href="/tech"><b>Scheda tecnica</b></a> — modelli, logica, punti di forza e deboli.</li>
+  </ul>
+  <h2>Come funziona (in breve)</h2>
+  <ul>
+    <li>Un tocco sull'orb, poi parli e basta: alla <b>pausa</b> rispondo da solo.</li>
+    <li>Puoi <b>interrompermi</b> mentre parlo: mi fermo e ti ascolto.</li>
+  </ul>
+  <h2>Stato e link</h2>
+  <ul>
+    <li>WS: <code id="wsurl"></code></li>
+    <li><a href="/tech">Scheda tecnica stampabile</a> · <a href="/health">health JSON</a></li>
+    <li><a href="/prova-vocale-test">Pagina TEST</a> — gemella per prove in locale (titolo VOICE/TESTS)</li>
+    <li>Doc completa: <code>voice/documentazione.md</code></li>
+  </ul>
+</aside>
+<aside class="drawer" id="drawer2" aria-label="Stato del sistema">
+  <button class="close" id="close2" aria-label="Chiudi">✕</button>
+  <h2>Stato del sistema</h2>
+  <table class="diag">
+    <tr><td>Voice (io)</td><td id="d-voice">…</td></tr>
+    <tr><td>Microfono</td><td id="d-mic">…</td></tr>
+    <tr><td>WebSocket</td><td id="d-ws">…</td></tr>
+    <tr><td>BE</td><td id="d-be">…</td></tr>
+    <tr><td>Modello BE</td><td id="d-model">…</td></tr>
+    <tr><td>STT / TTS</td><td id="d-modelli">…</td></tr>
+  </table>
+  <h2>Ultimi eventi</h2>
+  <ul id="evlog"><li>Nessun evento ancora: tocca l'orb e parla.</li></ul>
+</aside>
+
+<main class="stage">
+  <div class="orb-stage">
+    <canvas id="orb" width="520" height="520" aria-label="Tocca per avviare o terminare la conversazione"></canvas>
+  </div>
+  <div id="sicuro" class="warn" style="display:none">⚠️ <b>Il microfono richiede una pagina sicura:</b>
+    aprila da <code>http://localhost:8003/prova-vocale</code> oppure con HTTPS.</div>
+</main>
+
 <script>
 const SR = 16000;
 if (!window.isSecureContext) document.getElementById("sicuro").style.display = "block";
 const wsurl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/voice";
 document.getElementById("wsurl").textContent = wsurl;
-const stato = document.getElementById("stato"), btn = document.getElementById("talk"), vu = document.getElementById("vubar");
-let ws = null, ctx = null, stream = null, proc = null, live = false, playQ = [], playing = false;
+const cv = document.getElementById("orb"),
+      g = cv.getContext("2d");
+fetch("/health").then(r => r.ok ? "online" : "errore").then(t => {
+  document.getElementById("srv").textContent = "server: " + t;
+}).catch(() => document.getElementById("srv").textContent = "server: offline");
+const drawer = document.getElementById("drawer"), tab = document.getElementById("tab"),
+      drawer2 = document.getElementById("drawer2"), tab2 = document.getElementById("tab2");
+let closeTimer = null, closeTimer2 = null;
+function scheduleClose() {
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => drawer.classList.remove("open"), 350);
+}
+function scheduleClose2() {
+  clearTimeout(closeTimer2);
+  closeTimer2 = setTimeout(() => drawer2.classList.remove("open"), 350);
+}
+tab.addEventListener("mouseenter", () => { clearTimeout(closeTimer); drawer.classList.add("open"); });
+tab.addEventListener("click", () => drawer.classList.toggle("open"));
+drawer.addEventListener("mouseleave", scheduleClose);
+document.getElementById("close").addEventListener("click", () => drawer.classList.remove("open"));
+tab2.addEventListener("mouseenter", () => { clearTimeout(closeTimer2); drawer2.classList.add("open"); pollDiag(); });
+tab2.addEventListener("click", () => { drawer2.classList.toggle("open"); pollDiag(); });
+drawer2.addEventListener("mouseleave", scheduleClose2);
+document.getElementById("close2").addEventListener("click", () => drawer2.classList.remove("open"));
+// log eventi + diagnosi live: cosi' si vede se pause e modello funzionano
+function logEv(name) {
+  const ul = document.getElementById("evlog");
+  if (ul.querySelector("li") && ul.children.length === 1 && ul.textContent.startsWith("Nessun evento")) ul.innerHTML = "";
+  const li = document.createElement("li");
+  const hh = new Date();
+  li.innerHTML = "<time>" + hh.toLocaleTimeString() + "</time>" + name;
+  ul.prepend(li);
+  while (ul.children.length > 8) ul.removeChild(ul.lastChild);
+}
+function cell(id, ok, text) {
+  document.getElementById(id).innerHTML = '<span class="' + (ok ? "ok" : "ko") + '">' + (ok ? "OK" : "KO") + "</span> " + text;
+}
+async function pollDiag() {
+  try {
+    const r = await fetch("/diag");
+    const d = await r.json();
+    cell("d-voice", true, "server su, STT/TTS pronti");
+    const be = d.be || {};
+    cell("d-be", !!be.ok, (d.be_url || "") + " — " + (be.detail || ""));
+    cell("d-model", !!be.ok, be.model ? String(be.model) : (be.ok ? "(nome non dichiarato)" : "—"));
+    document.getElementById("d-modelli").textContent = (d.stt_backend || "?") + " / " + (d.tts_backend || "?");
+  } catch (e) {
+    cell("d-voice", false, "server non raggiungibile");
+    cell("d-be", false, "verifica impossibile"); cell("d-model", false, "—");
+  }
+}
+setInterval(() => { if (drawer2.classList.contains("open")) pollDiag(); }, 5000);
+pollDiag();
 
-function msg(t) { stato.innerHTML = t; }
+let ws = null, ctx = null, stream = null, proc = null;
+let live = false, playQ = [], playing = false, ttsRate = 22050, level = 0, mode = "idle";
+let ripples = [], flash = 0, flashRed = 0;
+function msg(t) { console.debug("[voce]", String(t).replace(/<[^>]*>/g, "")); }
 function rms(buf) { let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i]; return Math.sqrt(s / buf.length); }
 
+// ---- orb liquido: blob seno/coseno + puntini orbitali ----
+const CX = 260, CY = 260, R = 150;
+const dots = Array.from({ length: 16 }, (_, i) => {
+  const base = R * (0.78 + Math.random() * 0.34);
+  return {
+    a: (i / 16) * Math.PI * 2, r: base, base,
+    s: 3.5 + Math.random() * 2.5, o: 0.5 + Math.random() * 0.4
+  };
+});
+function wave(theta, t, amp) {
+  return amp * (Math.sin(3 * theta + t * 1.7) * 0.55
+              + Math.cos(5 * theta - t * 2.3) * 0.30
+              + Math.sin(8 * theta + t * 3.1) * 0.15);
+}
+function draw(tms) {
+  const t = tms / 1000;
+  g.clearRect(0, 0, 520, 520);
+  const active = live ? 1 : 0;
+  // velocita' puntini per stato: spento = lenti, ascolto = medi, pensiero = veloci
+  const spin = mode === "thinking" ? 2.6 : 0.15 + active * 1.6 + (mode === "speaking" ? 1.2 : 0);
+  const amp = mode === "heard" ? 7 : 5 + level * 34 + (mode === "speaking" ? 10 : 0);
+  const rot = mode === "thinking" ? t * 0.6 : 0;  // il pensiero "ruota" piano
+  // alone
+  // alone: si allarga quando entra il modello/BE (thinking), respira col parlato
+  const glowR = R * (mode === "thinking" ? 2.3 : 1.7);
+  const glow = g.createRadialGradient(CX, CY, R * 0.4, CX, CY, glowR);
+  glow.addColorStop(0, "rgba(179,52,31,0)");
+  glow.addColorStop(1, `rgba(179,52,31,${0.10 + level * 0.35 + (mode === "thinking" ? 0.15 : 0)})`);
+  g.fillStyle = glow;
+  g.fillRect(0, 0, 520, 520);
+  // blob
+  const grad = g.createRadialGradient(CX - 40, CY - 50, 20, CX, CY, R + 40);
+  grad.addColorStop(0, "#d95f43"); grad.addColorStop(0.6, "#b3341f"); grad.addColorStop(1, "#8a2615");
+  g.beginPath();
+  for (let i = 0; i <= 120; i++) {
+    const th = (i / 120) * Math.PI * 2 + rot;
+    const rr = R + wave(th, t, amp);
+    const x = CX + rr * Math.cos(th), y = CY + rr * Math.sin(th);
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  }
+  g.closePath();
+  g.fillStyle = grad;
+  g.shadowColor = "rgba(179,52,31,.55)"; g.shadowBlur = 18 + level * 60;
+  g.fill(); g.shadowBlur = 0;
+  // puntini: orbite libere, ma convergono al centro (caricamento) col pensiero
+  // e cavalcano il bordo liquido mentre il modello parla
+  const heard = mode === "heard" ? 1 : 0;
+  const loading = mode === "thinking" ? 1 : 0;
+  const riding = mode === "speaking" ? 1 : 0;
+  for (const d of dots) {
+    d.a += 0.003 * spin * (0.7 + d.r / R) + loading * 0.05;
+    let target = heard ? R * 1.02 : d.base;
+    if (loading) target = R * 0.22;                       // tutti al centro: caricamento
+    if (riding) target = R + wave(d.a, t, amp);           // sul bordo liquido dell'orb
+    d.r += (target - d.r) * 0.12;                         // ease: fluido, mai rigido
+    const x = CX + d.r * Math.cos(d.a), y = CY + d.r * Math.sin(d.a);
+    g.beginPath(); g.arc(x, y, d.s, 0, Math.PI * 2);
+    g.fillStyle = `rgba(255,255,255,${Math.min(0.95, d.o + 0.15)})`;
+    g.fill();
+  }
+  // anello morbido che SI ALLARGA quando entra il modello/BE (niente oro)
+  const ringBase = R + 26, ringAmp = mode === "thinking" ? 26 : 8;
+  g.beginPath(); g.arc(CX, CY, ringBase + Math.sin(t * (mode === "thinking" ? 5 : 2)) * ringAmp, 0, Math.PI * 2);
+  g.strokeStyle = `rgba(179,52,31,${mode === "thinking" ? 0.55 : 0.30})`;
+  g.lineWidth = mode === "thinking" ? 5 : 2.5; g.stroke();
+  // increspature a ogni pacchetto audio ricevuto (sta parlando)
+  ripples = ripples.filter(rp => rp.a > 0.02);
+  for (const rp of ripples) {
+    rp.r += 4; rp.a *= 0.94;
+    g.beginPath(); g.arc(CX, CY, rp.r, 0, Math.PI * 2);
+    g.strokeStyle = `rgba(179,52,31,${rp.a})`; g.lineWidth = 2; g.stroke();
+  }
+  // flash bianco all'interruzione, rosso in caso di errore
+  if (flash > 0.02) {
+    g.fillStyle = `rgba(255,255,255,${flash * 0.55})`;
+    g.fillRect(0, 0, 520, 520); flash *= 0.88;
+  }
+  if (flashRed > 0.02) {
+    g.fillStyle = `rgba(179,52,31,${flashRed * 0.35})`;
+    g.fillRect(0, 0, 520, 520); flashRed *= 0.92;
+  }
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
 async function playLoop() {
-  if (playing) return; playing = true;
+  if (playing) return; playing = true; mode = "speaking";
+  logEv("risposta vocale in arrivo");
   const actx = ctx;
   while (playQ.length) {
     const chunk = playQ.shift();
-    const n = chunk.length / 2, dv = new DataView(chunk), f = actx.createBuffer(1, n, SR), d = f.getChannelData(0);
+    const n = chunk.length / 2, dv = new DataView(chunk);
+    const f = actx.createBuffer(1, n, ttsRate), d = f.getChannelData(0);
     for (let i = 0; i < n; i++) d[i] = dv.getInt16(i * 2, true) / 32768;
     const src = actx.createBufferSource(); src.buffer = f; src.connect(actx.destination); src.start();
-    msg("🔊 L'assistente sta parlando… (parla pure sopra per interrompere)");
+    msg("🔊 Sto parlando… <b>parla pure sopra per interrompermi</b>.");
     await new Promise(r => src.onended = r);
   }
-  playing = false; msg("Pronto.");
+  playing = false; mode = live ? "listening" : "idle";
+  if (live) msg("🎤 Ti ascolto… fai una pausa quando hai finito.");
 }
-
-btn.onclick = async () => {
-  if (live) { await stop(); return; }
+cv.addEventListener("click", async () => {
+  if (live) { termina(); return; }
   try {
     ws = new WebSocket(wsurl); ws.binaryType = "arraybuffer";
     await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
     ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SR });
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: SR, channelCount: 1 } });
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: SR, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+    });
     const src = ctx.createMediaStreamSource(stream);
     proc = ctx.createScriptProcessor(2048, 1, 1);
     proc.onaudioprocess = ev => {
       const f = ev.inputBuffer.getChannelData(0);
-      vu.style.width = Math.min(100, rms(f) * 400) + "%";
+      level = Math.min(1, rms(f) * 6);
       const b = new ArrayBuffer(f.length * 2), dv = new DataView(b);
       for (let i = 0; i < f.length; i++) dv.setInt16(i * 2, Math.max(-32768, Math.min(32767, f[i] * 32768)), true);
       if (ws && ws.readyState === 1) ws.send(b);
@@ -74,18 +292,31 @@ btn.onclick = async () => {
     src.connect(proc); proc.connect(ctx.destination);
     ws.onmessage = ev => {
       if (typeof ev.data === "string") {
-        try { if (JSON.parse(ev.data).event === "barge_in") msg("✋ Interrotto: ti ascolto."); } catch (e) {}
-      } else { playQ.push(ev.data); playLoop(); }
+        try {
+          const m = JSON.parse(ev.data);
+          if (m.event === "ready" && m.tts_sample_rate) ttsRate = m.tts_sample_rate;
+          if (m.event === "ready") { cell("d-ws", true, "connesso"); }
+          if (m.event === "heard") { playQ = []; mode = "heard"; logEv("pausa captata dal server"); msg("pausa captata"); }
+          if (m.event === "thinking") { mode = "thinking"; logEv("modello al lavoro"); msg("elabora"); }
+          if (m.event === "barge_in") { playQ = []; flash = 1; mode = "listening"; logEv("interruzione (barge-in)"); msg("interrotto"); }
+        } catch (e) {}
+      } else { ripples.push({ r: R + 10, a: 0.6 }); playQ.push(ev.data); playLoop(); }
     };
-    live = true; btn.textContent = "⏹ Ferma e ascolta"; btn.classList.add("live");
-    msg("🎤 Ti ascolto… premi “Ferma e ascolta” quando hai finito.");
-  } catch (e) { msg("Errore: " + e + " (microfono solo da localhost/HTTPS)"); }
-};
-
-async function stop() {
-  live = false; btn.textContent = "🎤 Parla"; btn.classList.remove("live");
-  try { if (proc) proc.disconnect(); if (stream) stream.getTracks().forEach(t => t.stop()); } catch (e) {}
-  msg("Elaboro…");
+    ws.onclose = () => { if (live) { msg("Connessione chiusa dal server."); termina(); } };
+    live = true; mode = "listening";
+    cell("d-mic", true, "permesso ok, microfono aperto");
+    logEv("microfono aperto");
+    msg("in ascolto");
+  } catch (e) { flashRed = 1; cell("d-ws", false, "connessione fallita"); cell("d-mic", false, "bloccato"); logEv("errore: " + e); msg("Errore: " + e + " (microfono solo da localhost/HTTPS)"); }
+});
+async function termina() {
+  live = false; playQ = []; level = 0; mode = "idle";
+  cell("d-ws", false, "chiuso"); cell("d-mic", false, "chiuso");
+  logEv("conversazione terminata");
+  try { if (ws) ws.close(); } catch (e) {}
+  try { if (proc) proc.disconnect(); if (stream) stream.getTracks().forEach(t => t.stop()); if (ctx) ctx.close(); } catch (e) {}
+  ws = proc = stream = ctx = null;
+  msg("Conversazione terminata. Tocca l'orb per ricominciare.");
 }
 </script>
 </body>

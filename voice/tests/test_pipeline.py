@@ -80,6 +80,34 @@ async def test_barge_in_drops_stale_audio_and_notifies() -> None:
     await session.close()
 
 
+async def test_turn_emits_state_events_in_order() -> None:
+    """heard (pausa captata) -> thinking (modello) prima dell'audio: l'orb li anima."""
+    events: list[str] = []
+
+    async def cb(payload: dict[str, str]) -> None:
+        events.append(payload["event"])
+
+    orch = BackendOrchestrator(backend=_FakeBackend(), system_prompt="sys")  # type: ignore[arg-type]
+    session = VoiceSession(
+        vad=EnergyVAD(threshold=500.0, silence_ms=60, min_speech_ms=40, sample_rate=16000, frame_ms=20),
+        stt=FakeSTT(),
+        llm=orch,
+        tts=FakeTTS(),
+        sample_rate=16000,
+        on_control=cb,  # type: ignore[arg-type]
+    )
+    run = asyncio.create_task(session.run())
+    for _ in range(15):
+        await session.push_audio(_loud_frame())
+    for _ in range(6):
+        await session.push_audio(_silence_frame())
+    out = await asyncio.wait_for(session.audio_out_q.get(), timeout=10.0)
+    assert len(out) > 0
+    assert events[:2] == ["heard", "thinking"]
+    await session.close()
+    run.cancel()
+
+
 def test_history_trim() -> None:
     orch = BackendOrchestrator(backend=_FakeBackend(), system_prompt="sys", max_history=4)  # type: ignore[arg-type]
     for i in range(10):
