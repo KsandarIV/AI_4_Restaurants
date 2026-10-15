@@ -21,7 +21,21 @@ import streamlit as st
 from anonimizzatore import Anonimizzatore
 from contatti import MESSAGGIO_INIZIALE, Registrazione
 
-BE_URL_PREDEFINITO = os.getenv("BE_URL", "http://localhost:8000")
+def _be_url_da_env() -> str:
+    """BE_URL dall'ambiente; se manca, dal file .env di progetto; altrimenti localhost."""
+    if os.getenv("BE_URL"):
+        return os.environ["BE_URL"]
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "..", ".env"), encoding="utf-8") as f:
+            for riga in f:
+                if riga.startswith("BE_URL="):
+                    return riga.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return "http://localhost:8000"
+
+
+BE_URL_PREDEFINITO = _be_url_da_env()
 TIMEOUT_SECONDI = 120  # l'LLM locale può essere lento
 MESSAGGIO_BENVENUTO = (
     "Registrazione completata. Come posso aiutarla? Posso prenotare, modificare o cancellare un tavolo, "

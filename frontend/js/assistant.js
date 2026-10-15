@@ -6,10 +6,44 @@
   const voiceBtn = $("voice-toggle"), voiceLabel = $("voice-label"), voiceState = $("voice-state");
   let started = false, busy = false;
 
+  // Il modello risponde in Markdown: lo converto in nodi DOM (mai innerHTML, il testo resta sicuro).
+  function inline(parent, text) {
+    text.split(/(\*\*[^*]+\*\*)/).forEach((part) => {
+      if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+        const s = document.createElement("strong");
+        s.textContent = part.slice(2, -2);
+        parent.append(s);
+      } else if (part) {
+        parent.append(part.replace(/\*+/g, ""));
+      }
+    });
+  }
+
+  function renderMarkdown(box, text) {
+    let list = null;
+    text.split("\n").forEach((raw) => {
+      const line = raw.trim();
+      const bullet = line.match(/^[*\-•]\s+(.*)/);
+      if (bullet) {
+        if (!list) { list = document.createElement("ul"); box.append(list); }
+        const li = document.createElement("li");
+        inline(li, bullet[1]);
+        list.append(li);
+        return;
+      }
+      list = null;
+      if (!line) return;
+      const p = document.createElement("p");
+      inline(p, line.replace(/^#+\s*/, ""));
+      box.append(p);
+    });
+  }
+
   function addMessage(kind, text) {
     const m = document.createElement("div");
     m.className = "msg " + kind;
-    m.textContent = text;
+    if (kind === "bot") renderMarkdown(m, text);
+    else m.textContent = text;
     log.append(m);
     log.scrollTop = log.scrollHeight;
     return m;
