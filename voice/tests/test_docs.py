@@ -29,13 +29,20 @@ def test_pages_do_not_claim_removed_features() -> None:
         assert "tool shortcut" not in text.lower() and "[EMAIL]" not in text
 
 
+def test_voice_test_page_keeps_the_orb_and_both_drawers() -> None:
+    """The original test page (liquid orb, TECNICA + STATO drawers) is what v1 is tested with: keep it."""
+    html = (PAGES / "voice_test.html").read_text(encoding="utf-8")
+    for expected in ("orb liquido", "ripples", "flashRed", "flash", "requestAnimationFrame", "createRadialGradient",
+                     "ⓘ TECNICA", "◉ STATO", "drawer2", "mouseleave", "evlog", "pollDiag", "/tech-codice", "/tech-idea"):
+        assert expected in html, expected
+
+
 def test_voice_test_page_has_what_the_flow_needs() -> None:
     html = (PAGES / "voice_test.html").read_text(encoding="utf-8")
-    for expected in ("/ws/voice", "getUserMedia", "prova-vocale", "isSecureContext", "tts_sample_rate",
-                     "/tech-codice", "/tech-idea", "echoCancellation", "requestAnimationFrame",
-                     "transcript", "reply", "barge_in", "thinking", "heard", "loading",
-                     "pollDiag", "evlog", "setTimeout(connect", "Math.min(500 * 2 ** retry"):
-        assert expected in html
+    for expected in ("/ws/voice", "getUserMedia", "isSecureContext", "tts_sample_rate", "echoCancellation",
+                     "transcript", "reply", "barge_in", "thinking", "heard", "loading", "registered", "reservation",
+                     "setTimeout(connect", "Math.min(500 * 2 ** retry", "stopPlayback", 'id="checks"'):
+        assert expected in html, expected
 
 
 def test_voice_pages_live_vs_test() -> None:
@@ -47,7 +54,7 @@ def test_voice_pages_live_vs_test() -> None:
     assert "{{TITLE_SUFFIX}}" not in live and "{{TEST_BANNER}}" not in live
     assert "VOICE / TESTS" in test and "http://localhost:8000" in test
     assert "VOICE / TESTS" not in live
-    assert "Bella Napoli · Voice</a>" in live
+    assert "Bella Napoli · Voce</a>" in live
 
 
 def test_documentation_matches_the_code() -> None:

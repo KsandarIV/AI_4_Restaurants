@@ -270,31 +270,91 @@
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ cmd: "reset" }));
   });
 
-  // simple orb: radius follows the microphone level, colour follows the state
-  function draw(ms) {
-    const t0 = ms / 1000, cx = 150, cy = 150, base = 70;
-    g.clearRect(0, 0, 300, 300);
-    const colour = { idle: "#9a8a80", listening: "#b3341f", heard: "#d95f43", thinking: "#8a2615", speaking: "#1f5fa8" }[mode] || "#9a8a80";
-    const pulse = mode === "listening" ? level * 28 : mode === "speaking" ? 8 + 6 * Math.sin(t0 * 6) : 0;
-    const halo = g.createRadialGradient(cx, cy, base * 0.5, cx, cy, base * 2);
-    halo.addColorStop(0, "rgba(179,52,31,0)"); halo.addColorStop(1, "rgba(179,52,31," + (0.08 + level * 0.3) + ")");
-    g.fillStyle = halo; g.fillRect(0, 0, 300, 300);
-    g.beginPath(); g.arc(cx, cy, base + pulse, 0, Math.PI * 2); g.fillStyle = colour; g.fill();
-    if (mode === "thinking") {  // rotating dots while the model works
-      for (let i = 0; i < 8; i++) {
-        const a = t0 * 2.4 + (i / 8) * Math.PI * 2;
-        g.beginPath(); g.arc(cx + Math.cos(a) * (base + 22), cy + Math.sin(a) * (base + 22), 5, 0, Math.PI * 2);
-        g.fillStyle = "rgba(255,255,255," + (0.35 + 0.6 * (i / 8)) + ")"; g.fill();
-      }
+  // liquid orb, same animation as the test page (blob + orbiting dots + ripples + flashes)
+  let flash = 0, flashRed = 0;
+  // ---- orb liquido: blob seno/coseno + puntini orbitali ----
+  const CX = 260, CY = 260, R = 150;
+  const dots = Array.from({ length: 16 }, (_, i) => {
+    const base = R * (0.78 + Math.random() * 0.34);
+    return {
+      a: (i / 16) * Math.PI * 2, r: base, base,
+      s: 3.5 + Math.random() * 2.5, o: 0.5 + Math.random() * 0.4
+    };
+  });
+  function wave(theta, t, amp) {
+    return amp * (Math.sin(3 * theta + t * 1.7) * 0.55
+                + Math.cos(5 * theta - t * 2.3) * 0.30
+                + Math.sin(8 * theta + t * 3.1) * 0.15);
+  }
+  function draw(tms) {
+    const t = tms / 1000;
+    g.clearRect(0, 0, 520, 520);
+    const active = live ? 1 : 0;
+    // velocita' puntini per stato: spento = lenti, ascolto = medi, pensiero = veloci
+    const spin = mode === "thinking" ? 2.6 : 0.15 + active * 1.6 + (mode === "speaking" ? 1.2 : 0);
+    const amp = mode === "heard" ? 7 : 5 + level * 34 + (mode === "speaking" ? 10 : 0);
+    const rot = mode === "thinking" ? t * 0.6 : 0;  // il pensiero "ruota" piano
+    // alone
+    // alone: si allarga quando entra il modello/BE (thinking), respira col parlato
+    const glowR = R * (mode === "thinking" ? 2.3 : 1.7);
+    const glow = g.createRadialGradient(CX, CY, R * 0.4, CX, CY, glowR);
+    glow.addColorStop(0, "rgba(179,52,31,0)");
+    glow.addColorStop(1, `rgba(179,52,31,${0.10 + level * 0.35 + (mode === "thinking" ? 0.15 : 0)})`);
+    g.fillStyle = glow;
+    g.fillRect(0, 0, 520, 520);
+    // blob
+    const grad = g.createRadialGradient(CX - 40, CY - 50, 20, CX, CY, R + 40);
+    grad.addColorStop(0, "#d95f43"); grad.addColorStop(0.6, "#b3341f"); grad.addColorStop(1, "#8a2615");
+    g.beginPath();
+    for (let i = 0; i <= 120; i++) {
+      const th = (i / 120) * Math.PI * 2 + rot;
+      const rr = R + wave(th, t, amp);
+      const x = CX + rr * Math.cos(th), y = CY + rr * Math.sin(th);
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
     }
-    ripples = ripples.filter((r) => r.a > 0.03);
-    ripples.forEach((r) => {
-      r.r += 2.5; r.a *= 0.94;
-      g.beginPath(); g.arc(cx, cy, r.r, 0, Math.PI * 2); g.strokeStyle = "rgba(31,95,168," + r.a + ")"; g.lineWidth = 2; g.stroke();
-    });
-    g.font = "46px serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = "#fff";
-    g.fillText(wantLive ? "🎙️" : "▶", cx, cy + 2);
+    g.closePath();
+    g.fillStyle = grad;
+    g.shadowColor = "rgba(179,52,31,.55)"; g.shadowBlur = 18 + level * 60;
+    g.fill(); g.shadowBlur = 0;
+    // puntini: orbite libere, ma convergono al centro (caricamento) col pensiero
+    // e cavalcano il bordo liquido mentre il modello parla
+    const heard = mode === "heard" ? 1 : 0;
+    const loading = mode === "thinking" ? 1 : 0;
+    const riding = mode === "speaking" ? 1 : 0;
+    for (const d of dots) {
+      d.a += 0.003 * spin * (0.7 + d.r / R) + loading * 0.05;
+      let target = heard ? R * 1.02 : d.base;
+      if (loading) target = R * 0.22;                       // tutti al centro: caricamento
+      if (riding) target = R + wave(d.a, t, amp);           // sul bordo liquido dell'orb
+      d.r += (target - d.r) * 0.12;                         // ease: fluido, mai rigido
+      const x = CX + d.r * Math.cos(d.a), y = CY + d.r * Math.sin(d.a);
+      g.beginPath(); g.arc(x, y, d.s, 0, Math.PI * 2);
+      g.fillStyle = `rgba(255,255,255,${Math.min(0.95, d.o + 0.15)})`;
+      g.fill();
+    }
+    // anello morbido che SI ALLARGA quando entra il modello/BE (niente oro)
+    const ringBase = R + 26, ringAmp = mode === "thinking" ? 26 : 8;
+    g.beginPath(); g.arc(CX, CY, ringBase + Math.sin(t * (mode === "thinking" ? 5 : 2)) * ringAmp, 0, Math.PI * 2);
+    g.strokeStyle = `rgba(179,52,31,${mode === "thinking" ? 0.55 : 0.30})`;
+    g.lineWidth = mode === "thinking" ? 5 : 2.5; g.stroke();
+    // increspature a ogni pacchetto audio ricevuto (sta parlando)
+    ripples = ripples.filter(rp => rp.a > 0.02);
+    for (const rp of ripples) {
+      rp.r += 4; rp.a *= 0.94;
+      g.beginPath(); g.arc(CX, CY, rp.r, 0, Math.PI * 2);
+      g.strokeStyle = `rgba(179,52,31,${rp.a})`; g.lineWidth = 2; g.stroke();
+    }
+    // flash bianco all'interruzione, rosso in caso di errore
+    if (flash > 0.02) {
+      g.fillStyle = `rgba(255,255,255,${flash * 0.55})`;
+      g.fillRect(0, 0, 520, 520); flash *= 0.88;
+    }
+    if (flashRed > 0.02) {
+      g.fillStyle = `rgba(179,52,31,${flashRed * 0.35})`;
+      g.fillRect(0, 0, 520, 520); flashRed *= 0.92;
+    }
     requestAnimationFrame(draw);
+
   }
   requestAnimationFrame(draw);
 
@@ -319,7 +379,7 @@
   }
 
   function onMessage(ev) {
-    if (typeof ev.data !== "string") { ripples.push({ r: 75, a: 0.6 }); playQ.push(ev.data); playLoop(); return; }
+    if (typeof ev.data !== "string") { ripples.push({ r: R + 10, a: 0.6 }); playQ.push(ev.data); playLoop(); return; }
     let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
     switch (m.event) {
       case "ready":
@@ -330,14 +390,14 @@
       case "transcript": logLine("user", m.text); break;
       case "thinking": mode = "thinking"; setState("st_thinking"); break;
       case "reply": logLine("bot", m.text); break;
-      case "barge_in": stopPlayback(); mode = "listening"; setState("st_listening"); break;
+      case "barge_in": stopPlayback(); flash = 1; mode = "listening"; setState("st_listening"); break;
       case "registered": store.customer_id = m.customer_id; save(store); break;
       case "reservation":
         if (m.customer_id) { store.customer_id = m.customer_id; }
         upsert({ code: m.code, date: m.date, time: m.time, guests: Number(m.guests) || 0, status: m.status,
                  table: m.table, location: m.location });
         break;
-      case "error": setState("st_error", { d: (m.detail || "error") + (m.message ? " " + m.message : "") }); break;
+      case "error": flashRed = 1; setState("st_error", { d: (m.detail || "error") + (m.message ? " " + m.message : "") }); break;
       default: break;
     }
   }

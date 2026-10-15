@@ -7,18 +7,28 @@ SQLite) is reached over HTTP only.
 
 ## Simple commands
 
-| I want to… | Command (from the repo root) |
-|---|---|
-| **Test locally** (stub BE + voice + browser, nothing else needed) | `voiceoice local`  (`--fake` = no speech models, page/flow only) |
-| **Run for real** on the VOICE machine, the three-machine flow | `python entrypointvvia.py`  (as always: pull, setup, firewall, waits for the BE, starts `python -m voicebot`) |
-| Same, but only this component (BE already up) | `voiceoice real` |
-| Find out why something does not work | `voiceoice doctor` |
-| Voice chat from this PC, no browser, no streaming (the safe mode) | `voiceoice v2`  (`--text` = type instead of speak) |
-| Live call from this PC, no browser | `voiceoice live ws://<voice-host>:8003/ws/voice` |
-| Run the tests | `voiceoice test` |
+**What is v1?** The live voice bot (WebSocket, VAD, streaming, barge-in). `voice local` tests **v1**, not the
+speech-to-text/text-to-speech chat (that is `voice v2`). You test v1 on the **test page** (the orb, with the
+side tabs TECNICA and STATO):
+
+| I want to… | Command (from the repo root) | Opens |
+|---|---|---|
+| **Test v1 locally** — stub BE, nothing else needed | `voiceoice local`  (`--fake` = no speech models, page/flow only) | `/prova-vocale-test`: banner **VOICE / TESTS — BE in uso: stub** |
+| **Test v1 against the real BE on the LAN** (one component) | `voiceoice real`  then open `http://localhost:8003/prova-vocale` | `/prova-vocale`: no banner, real BE |
+| **The full three-machine flow**, as always | `python entrypointvvia.py`  (pull, setup, firewall, waits for the BE, starts `python -m voicebot`) | same pages on the VOICE machine |
+| Find out why something does not work | `voiceoice doctor`  (also the STATO tab) | |
+| v2: voice chat from this PC, no browser, one question = one answer | `voiceoice v2`  (`--text` = type instead of speak) | |
+| Live call from this PC without browser | `voiceoice live ws://<voice-host>:8003/ws/voice` | |
+| Run the tests | `voiceoice test` | |
 
 `voiceoice` is `voiceoice.bat`; the same commands work as `python -m voicebot <command>`.
-In local mode the page shows a **"LOCAL TEST — stub BE"** banner and nothing you do touches the real data.
+Both pages are served by the same server: the test page at `/prova-vocale` (`-test` = always with the
+banner) and the restaurant site at `/`. In local mode `/prova-vocale` also carries the banner.
+
+The test page is the original one — liquid orb with its animations, **TECNICA** tab (technical sheets) and
+**STATO** tab (voice / microphone / WebSocket / BE / model + every check with its fix + latest events) —
+now also showing the live transcript under the orb, reconnecting by itself and stopping the sound at once
+when you interrupt.
 
 ## The site (same kind of site as the chat bot's)
 
@@ -34,7 +44,7 @@ assistant (orb, live transcript, "new conversation", "hang up") and **My reserva
 - the page never talks to the BE directly: `/site/menu`, `/site/info`, `/site/reservation/{code}` go
   through the voice server. Page language follows `VOICE_LANGUAGE` (it/en).
 
-The older diagnostic page is still at `/prova-vocale` (+ `/tech`, `/tech-codice`, `/tech-idea`, `/diag`).
+Its assistant uses the same liquid orb as the test page. Other pages: `/prova-vocale` (+ `/tech`, `/tech-codice`, `/tech-idea`, `/diag`).
 
 ## The spoken final report
 

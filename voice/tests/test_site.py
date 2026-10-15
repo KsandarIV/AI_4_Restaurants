@@ -86,6 +86,23 @@ def test_the_site_has_the_same_texts_in_both_languages() -> None:
     assert used <= _keys(it_block), used - _keys(it_block)  # every label in the HTML has a translation
 
 
+def test_the_site_assistant_has_the_same_liquid_orb_as_the_test_page() -> None:
+    js = (SITE / "app.js").read_text(encoding="utf-8")
+    for needle in ("liquid orb", "createRadialGradient", "ripples", "flashRed", "const CX = 260", "wave(th, t, amp)"):
+        assert needle in js, needle
+
+
+async def test_the_test_page_shows_the_banner_when_running_against_the_stub() -> None:
+    async with stub_be() as (url, _):
+        local = create_app(local_settings(url, 8013, fake=True))
+        live = create_app(Settings(backend_base_url=url))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=local), base_url="http://v") as c1:
+            assert "VOICE / TESTS" in (await c1.get("/prova-vocale")).text
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=live), base_url="http://v") as c2:
+            assert "VOICE / TESTS" not in (await c2.get("/prova-vocale")).text
+            assert "VOICE / TESTS" in (await c2.get("/prova-vocale-test")).text
+
+
 def test_the_site_talks_to_this_server_only_and_handles_every_event() -> None:
     js = (SITE / "app.js").read_text(encoding="utf-8")
     for needle in ("/site/menu", "/site/info", "/site/reservation/", "/site/config", "/ws/voice", "localStorage",
