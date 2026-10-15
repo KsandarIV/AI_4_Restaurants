@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+backend/restaurant.db*
+backend/conversations.db*
+backend/backups/
+.env
+tests/
+voice/
+chat/
+frontend/

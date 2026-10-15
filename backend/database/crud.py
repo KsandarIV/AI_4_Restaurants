@@ -1,20 +1,39 @@
+import logging
 import random
 import string
 import datetime
 import threading
 import uuid
 from typing import Optional, List, Dict, Any, Tuple
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from backend.database.connection import engine, Base, SessionLocal
 from backend.database.models import RestaurantTable, Reservation, MenuItem, RestaurantInfo, Customer, Closure
 from backend.database.seed_data import seed_database, sync_static_data, WEEKDAYS_IT
 from backend.config import settings
 
+logger = logging.getLogger("backend.db")
+
 # Thread lock to prevent race conditions during concurrent table bookings
 table_lock = threading.Lock()
 
-# Columns added after the first release: create_all() creates new tables but never alters existing ones
+# Versioned schema migrations for existing SQLite files (create_all only creates
+# missing tables, it never alters them). Each step is idempotent: it checks PRAGMA
+# first, so re-running init_db on an up-to-date file is a no-op.
+# NOTE on Alembic: evaluated and deliberately deferred. Single-file SQLite, one writer
+# process, two post-v1 column additions: an explicit registry below is fully auditable
+# and covered by tests. If the schema grows beyond ~10 migrations, switch to Alembic
+# (models are plain SQLAlchemy declarative, so `alembic init` + autogenerate works
+# without touching crud.py).
+_SCHEMA_MIGRATIONS = {
+    2: [  # v1 -> v2: dish_type + available (sold-out flag managed by staff)
+        ("menu_items", "dish_type", "VARCHAR(20)"),
+        ("menu_items", "available", "BOOLEAN NOT NULL DEFAULT 1"),
+    ],
+}
+SCHEMA_VERSION = max(_SCHEMA_MIGRATIONS, default=1)
+
+# Backwards-compatible alias (same content as migration v2, single-step form).
 _COLUMNS_ADDED_LATER = {
     "menu_items": {"dish_type": "VARCHAR(20)", "available": "BOOLEAN NOT NULL DEFAULT 1"},
 }
@@ -31,10 +50,57 @@ def _add_missing_columns(eng=None):
                 if column not in existing:
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
+def _get_schema_version(eng=None) -> int:
+    eng = eng or engine
+    with eng.begin() as conn:
+        tables = {row[0] for row in conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if "schema_version" not in tables:
+            return 1
+        return conn.exec_driver_sql("SELECT version FROM schema_version").scalar() or 1
+
+def migrate_schema(eng=None) -> int:
+    """Apply pending versioned migrations, return the resulting schema version."""
+    eng = eng or engine
+    if eng.dialect.name != "sqlite":
+        return SCHEMA_VERSION
+    with eng.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)")
+        current = conn.exec_driver_sql("SELECT version FROM schema_version").scalar() or 1
+        for version in sorted(_SCHEMA_MIGRATIONS):
+            if version <= current:
+                continue
+            for table, column, ddl in _SCHEMA_MIGRATIONS[version]:
+                existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+                if column not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+            conn.exec_driver_sql(
+                "INSERT OR REPLACE INTO schema_version (version) VALUES (?)", (version,))
+            current = version
+            logger.info("Migrazione schema applicata: v%s (tabella %s)", version, table)
+    return current
+
+def _begin_immediate(db: Session) -> None:
+    """Take the SQLite RESERVED write lock BEFORE the availability check.
+
+    The check-then-insert in create/modify must be one atomic unit: without this,
+    two concurrent writers could both see the same table as free and overbook it.
+    Must be called as the first statement inside `table_lock` (any read transaction
+    opened by prior validation queries is closed first, validation is read-only).
+    The matching COMMIT is the existing db.commit(); on error call db.rollback().
+    No-op on non-SQLite backends.
+    """
+    if engine.dialect.name != "sqlite":
+        return
+    db.rollback()
+    db.execute(text("BEGIN IMMEDIATE"))
+
 def init_db():
     """Create all tables, update old database files, seed data and align menu/info with the code."""
     Base.metadata.create_all(bind=engine)
     _add_missing_columns()
+    migrate_schema()
     with SessionLocal() as db:
         seed_database(db)
         sync_static_data(db)
@@ -305,54 +371,67 @@ def create_reservation(
         return {"success": False, "error": error}
     time = normalize_time(time)
 
-    # Thread-safe table allocation
+    # Thread-safe + crash-safe table allocation: in-process lock plus the SQLite
+    # RESERVED write lock (BEGIN IMMEDIATE), so check-then-insert is atomic.
     with table_lock:
-        available_tables = get_available_tables(
-            db=db,
-            date=date,
-            time=time,
-            guests=guests,
-            preferred_location=preferred_location
-        )
-
-        # Fallback to any location if preferred location has no seats
-        if not available_tables and preferred_location:
+        _begin_immediate(db)
+        try:
             available_tables = get_available_tables(
                 db=db,
                 date=date,
                 time=time,
                 guests=guests,
-                preferred_location=None
+                preferred_location=preferred_location
             )
 
-        if not available_tables:
-            return {
-                "success": False,
-                "error": (
-                    f"Purtroppo non ci sono tavoli disponibili per {guests} persone in data {date} "
-                    f"nella fascia oraria delle ore {time} (slot di {settings.RESERVATION_DURATION_MINUTES} min)."
+            # Fallback to any location if preferred location has no seats
+            if not available_tables and preferred_location:
+                available_tables = get_available_tables(
+                    db=db,
+                    date=date,
+                    time=time,
+                    guests=guests,
+                    preferred_location=None
                 )
-            }
 
-        chosen_table = available_tables[0]
-        booking_code = generate_booking_code(db)
+            if not available_tables:
+                db.rollback()
+                return {
+                    "success": False,
+                    "error": (
+                        f"Purtroppo non ci sono tavoli disponibili per {guests} persone in data {date} "
+                        f"nella fascia oraria delle ore {time} (slot di {settings.RESERVATION_DURATION_MINUTES} min)."
+                    )
+                }
 
-        reservation = Reservation(
-            booking_code=booking_code,
-            customer_id=cid,
-            table_id=chosen_table.id,
-            date=date.strip(),
-            time=time,
-            shift=shift,
-            guests_count=guests,
-            status="CONFIRMED",
-            special_requests=_clean_text(special_requests)
+            chosen_table = available_tables[0]
+            booking_code = generate_booking_code(db)
+
+            reservation = Reservation(
+                booking_code=booking_code,
+                customer_id=cid,
+                table_id=chosen_table.id,
+                date=date.strip(),
+                time=time,
+                shift=shift,
+                guests_count=guests,
+                status="CONFIRMED",
+                special_requests=_clean_text(special_requests)
+            )
+
+            db.add(reservation)
+            db.commit()
+            db.refresh(reservation)
+        except Exception:
+            db.rollback()
+            logger.exception("create_reservation fallita (date=%s time=%s guests=%s)", date, time, guests)
+            return {"success": False, "error": "Errore interno durante la prenotazione. Riprova tra poco."}
+
+        logger.info(
+            "Prenotazione %s creata: %s %s, %s coperti, tavolo #%s",
+            reservation.booking_code, reservation.date, reservation.time,
+            reservation.guests_count, chosen_table.table_number,
         )
-
-        db.add(reservation)
-        db.commit()
-        db.refresh(reservation)
-
         return {
             "success": True,
             "booking_code": reservation.booking_code,
@@ -419,14 +498,14 @@ def modify_reservation(
         target_date = new_date.strip() if new_date else res.date
         target_time = new_time or res.time
         target_guests = new_guests or res.guests_count
+        res_id = res.id
 
-        # Validate date if changed
+        # Read-only validations BEFORE taking the write lock (no transaction open yet).
         if new_date:
             date_ok, date_err, _ = validate_date(target_date, db)
             if not date_ok:
                 return {"success": False, "error": date_err}
 
-        # Validate time if changed
         if new_time:
             time_ok, time_err, _ = validate_time_and_shift(target_time)
             if not time_ok:
@@ -439,6 +518,49 @@ def modify_reservation(
             time_ok, time_err, shift = validate_time_and_shift(target_time)
             if not time_ok:
                 return {"success": False, "error": time_err}
+        else:
+            # Notes-only change: single-row atomic update, no availability check needed.
+            _begin_immediate(db)
+            try:
+                res = db.query(Reservation).filter(Reservation.id == res_id).first()
+                if not res or not _can_access(res, customer_id):
+                    db.rollback()
+                    return {"success": False, "error": f"Prenotazione con codice {booking_code} non trovata."}
+                if res.status == "CANCELLED":
+                    db.rollback()
+                    return {"success": False, "error": f"La prenotazione {booking_code} è già stata cancellata e non può essere modificata."}
+                if new_requests is not None:
+                    res.special_requests = _clean_text(new_requests)
+                db.commit()
+                db.refresh(res)
+            except Exception:
+                db.rollback()
+                logger.exception("modify_reservation (note) fallita per %s", booking_code)
+                return {"success": False, "error": "Errore interno durante la modifica. Riprova tra poco."}
+            return {
+                "success": True,
+                "booking_code": res.booking_code,
+                "customer_id": res.customer_id,
+                "date": res.date,
+                "time": res.time,
+                "shift": res.shift,
+                "guests_count": res.guests_count,
+                "table_number": res.table.table_number if res.table else None,
+                "status": res.status,
+                "special_requests": res.special_requests
+            }
+
+        # Slot change: re-read the row INSIDE the write transaction, then
+        # check-then-update atomically (prevents double booking of the new slot).
+        _begin_immediate(db)
+        try:
+            res = db.query(Reservation).filter(Reservation.id == res_id).first()
+            if not res or not _can_access(res, customer_id):
+                db.rollback()
+                return {"success": False, "error": f"Prenotazione con codice {booking_code} non trovata."}
+            if res.status == "CANCELLED":
+                db.rollback()
+                return {"success": False, "error": f"La prenotazione {booking_code} è già stata cancellata e non può essere modificata."}
 
             candidates = get_available_tables(
                 db=db,
@@ -449,6 +571,7 @@ def modify_reservation(
             )
 
             if not candidates:
+                db.rollback()
                 return {
                     "success": False,
                     "error": f"Nessun tavolo disponibile per {target_guests} persone in data {target_date} ore {target_time}."
@@ -468,12 +591,20 @@ def modify_reservation(
             res.shift = shift
             res.guests_count = target_guests
 
-        if new_requests is not None:
-            res.special_requests = _clean_text(new_requests)
+            if new_requests is not None:
+                res.special_requests = _clean_text(new_requests)
 
-        db.commit()
-        db.refresh(res)
+            db.commit()
+            db.refresh(res)
+        except Exception:
+            db.rollback()
+            logger.exception("modify_reservation fallita per %s", booking_code)
+            return {"success": False, "error": "Errore interno durante la modifica. Riprova tra poco."}
 
+        logger.info(
+            "Prenotazione %s modificata: %s %s, %s coperti",
+            res.booking_code, res.date, res.time, res.guests_count,
+        )
         return {
             "success": True,
             "booking_code": res.booking_code,
@@ -500,9 +631,24 @@ def cancel_reservation(db: Session, booking_code: str, customer_id: Optional[str
         if res.status == "CANCELLED":
             return {"success": True, "message": f"La prenotazione {booking_code} era già stata cancellata.", "booking_code": booking_code}
 
-        res.status = "CANCELLED"
-        db.commit()
+        res_id = res.id
+        _begin_immediate(db)
+        try:
+            res = db.query(Reservation).filter(Reservation.id == res_id).first()
+            if not res or not _can_access(res, customer_id):
+                db.rollback()
+                return {"success": False, "error": f"Prenotazione con codice {booking_code} non trovata."}
+            if res.status == "CANCELLED":
+                db.commit()  # idempotent: nothing to change, release the write lock
+                return {"success": True, "message": f"La prenotazione {booking_code} era già stata cancellata.", "booking_code": booking_code}
+            res.status = "CANCELLED"
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("cancel_reservation fallita per %s", booking_code)
+            return {"success": False, "error": "Errore interno durante la cancellazione. Riprova tra poco."}
 
+        logger.info("Prenotazione %s cancellata.", res.booking_code)
         return {
             "success": True,
             "booking_code": res.booking_code,

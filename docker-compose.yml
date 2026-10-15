@@ -1,0 +1,42 @@
+# `docker compose up --build` sulla macchina BE: backend (porta 8000) + Ollama (11434).
+# CHAT e VOICE restano fuori da questo compose: girano sulle altre due macchine in LAN
+# e puntano a http://<IP_BE>:8000 (vedi lan/README.md e .env.example).
+# Il .env della macchina BE sta nella radice (mai committato); le variabili sotto sono
+# solo i default sicuri, il .env li sovrascrive.
+services:
+  backend:
+    build: .
+    image: ai4restaurants-be:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      DATABASE_URL: sqlite:////app/data/restaurant.db
+      CHECKPOINTS_DB_PATH: /app/data/conversations.db
+    volumes:
+      - restaurant-data:/app/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # LLM 100% locale. Il modello (es. gemma4:12b) va scaricato una volta:
+  # docker exec <container-ollama> ollama pull gemma4:12b
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  restaurant-data:   # restaurant.db + conversations.db + backups: sopravvivono ai rebuild
+  ollama-models:     # pesi del modello: si scaricano una sola volta
