@@ -25,8 +25,8 @@ installato Ollama. Per avviare ogni macchina: `python lan\machine_setup.py` (ved
       stampa i comandi `netsh`.
 - [ ] Sulla macchina BE: `ollama list` mostra un modello con "tools" (`gemma4:12b`, oppure `gemma4-coder`, `llama3.2`).
       Il BE sceglie da solo il primo disponibile e lo scrive nel log.
-- [ ] Sulla macchina CHAT: `python -m spacy download it_core_news_md` e `pip install phonenumbers streamlit requests`
-      (lo script di setup non li installa ancora: vedi "Limiti").
+- [ ] Sulla macchina CHAT: dopo `python setup\setup_env.py` il modello spaCy e `phonenumbers` sono installati. Controllo:
+      `.venv\Scripts\python.exe -c "import spacy, phonenumbers; spacy.load('it_core_news_md'); print('ok')"`.
 
 ## 3. Impostazioni della macchina BE (file `.env` nella radice)
 
@@ -107,8 +107,8 @@ Per ripartire con un database pulito: spegni il BE e cancella `backend\restauran
   generico); le allergie, le conferme e l'identità sono protette dal codice, il resto no.
 - **Dati personali**: nome e telefono sono conservati in chiaro nel database (conservazione limitata a 90 giorni con
   `python -m backend.maintenance purge`). Per un uso reale serve un parere sul trattamento dei dati personali.
-- **Setup della macchina CHAT**: `setup/requirements.txt` non include ancora `phonenumbers` e il modello spaCy non viene
-  scaricato dallo script (sezione 2).
+- **Setup della macchina CHAT**: il passo "Dipendenze Python" di `setup/setup_env.py` ora installa `phonenumbers` e
+  scarica il modello spaCy; va eseguito di nuovo (`git pull`, poi `python setup\setup_env.py`) sulle macchine già configurate.
 
 ## 8. Se qualcosa non va
 
@@ -118,6 +118,6 @@ Per ripartire con un database pulito: spegni il BE e cancella `backend\restauran
 | La chat dice "Il modello linguistico non risponde" (503) | Ollama spento o nessun modello con "tools" installato: `ollama list` |
 | `/api/health` è `degraded` | Il dettaglio è nei campi `database`, `llm_reachable`, `llm_model_available` |
 | `/api/staff` dice "disabilitata" | Manca `STAFF_API_KEY` nel `.env` del BE |
-| Il chatbot non parte: `No module named 'phonenumbers'` / modello spaCy mancante | Vedi sezione 2, macchina CHAT |
+| Il chatbot non parte: `No module named 'phonenumbers'` / modello spaCy mancante | Rilanciare `python setup\setup_env.py` sulla macchina CHAT |
 | Prima risposta molto lenta | Ollama carica il modello: è normale solo la prima volta, il BE lo riscalda all'avvio |
 | `git pull` dà `cannot lock ref SAVOV` | Usare `git pull origin main` |
