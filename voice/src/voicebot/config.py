@@ -94,9 +94,11 @@ class Settings(BaseSettings):
 
     # --- VAD ---
     vad_mode: Literal["energy", "webrtc"] = Field(default="energy")
-    vad_energy_threshold: float = Field(default=500.0)
+    # Noise rejection (tuned on real microphones): a sound below this RMS is not speech (0-32767 scale); ...
+    vad_energy_threshold: float = Field(default=900.0)
     vad_silence_ms: int = Field(default=600)
-    vad_min_speech_ms: int = Field(default=250)
+    # ... an utterance shorter than this never reaches the STT (bangs, coughs, a key click) ...
+    vad_min_speech_ms: int = Field(default=450)
     vad_max_segment_s: float = Field(default=15.0)
 
     # --- STT ---
@@ -123,7 +125,7 @@ class Settings(BaseSettings):
     barge_in_enabled: bool = Field(default=True)
     # Speech must last this long while the bot talks before it counts as an
     # interruption (filters clicks, coughs and speaker echo).
-    barge_in_min_ms: int = Field(default=300)
+    barge_in_min_ms: int = Field(default=700)
     preload_models: bool = Field(default=True)  # load STT/TTS at startup, not at first call
     # Send one throw-away turn to the BE at startup: the LLM reads its long prompt once (about a minute on a weak
     # CPU) and keeps it cached, so the first caller does not wait for it. Needs preload_models.

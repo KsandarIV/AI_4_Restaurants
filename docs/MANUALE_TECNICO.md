@@ -166,7 +166,8 @@ copy .env.example .env
 | VOICE | `VOICE_HOST` · `VOICE_PORT` | dove ascolta | `0.0.0.0` · `8003` |
 | VOICE | `VOICE_LANGUAGE` | lingua delle frasi del bot e di Whisper | `it` |
 | VOICE | `STT_MODEL` · `STT_DEVICE` · `STT_COMPUTE_TYPE` | Whisper | `small` · `cpu` · `int8` |
-| VOICE | `VAD_ENERGY_THRESHOLD` · `VAD_SILENCE_MS` | soglia voce · pausa che chiude la frase | `500` · `600` |
+| VOICE | `VAD_ENERGY_THRESHOLD` · `VAD_SILENCE_MS` | soglia voce · pausa che chiude la frase | `900` · `600` |
+| VOICE | `VAD_MIN_SPEECH_MS` · `BARGE_IN_MIN_MS` | durata minima di una frase per arrivare al riconoscimento · durata minima per interrompere il bot (anti colpi e tosse) | `450` · `700` |
 | VOICE | `REQUIRE_REGISTRATION` | specchio del BE: chiedere nome e telefono | `true` |
 | VOICE | `CONTEXT_MAX_EXCHANGES` · `CONTEXT_MAX_RESETS` | scambi prima di una nuova sessione · ripristini prima di chiudere | `20` · `3` |
 | VOICE | `WARM_BACKEND` · `PRELOAD_MODELS` | turno di riscaldamento al BE · carica i modelli all'avvio | `true` · `true` |

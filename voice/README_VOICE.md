@@ -83,7 +83,7 @@ WS reader ─PCM→ audio_in_q ─→ [VAD] ─utterance→ segment_q ─→ [ST
 
 - Every queue is bounded (backpressure). Live audio drops the oldest frame when late; speech output blocks (dropping would cut words).
 - The turn is its own task, so **barge-in cancels it at any moment**, even while the BE is thinking. Speech must last `BARGE_IN_MIN_MS`
-  (300) to count (clicks and echo are ignored); while the client still plays audio sent faster than real time the bot counts as speaking. The VAD
+  (700 ms) to count (clicks and echo are ignored); while the client still plays audio sent faster than real time the bot counts as speaking. The VAD
   is not reset: it is already capturing the interrupting utterance.
 - VAD timing uses the real duration of the audio (browser chunks are 128 ms, the Python client 20 ms): pause detection lasts the same for both.
 - STT and TTS are loaded **once** at start-up in the background and shared by all calls (`/health` answers at once, `/ready` flips when warm).
@@ -134,8 +134,8 @@ A connection is stateless: clients reconnect with exponential backoff (the pages
 | `STT_BACKEND` · `STT_MODEL` | `faster-whisper` · `small` | `fake` = no recognition; `tiny` mangles digits and names |
 | `STT_LANGUAGE` · `STT_TIMEOUT_S` · `STT_INITIAL_PROMPT` | follow `VOICE_LANGUAGE` · 30 · empty | the prompt is off: it can be echoed back |
 | `TTS_BACKEND` · `PIPER_MODEL_PATH` | `piper` · `voice/models/it_IT-riccardo-x_low.onnx` | `fake` = beeps; the path resolves from cwd, repo root or `voice/` |
-| `VAD_MODE` · `VAD_*` | `energy` · threshold 500, silence 600 ms, min speech 250 ms | `webrtc` optional |
-| `BARGE_IN_ENABLED` · `BARGE_IN_MIN_MS` | `true` · `300` | interruptions |
+| `VAD_MODE` · `VAD_*` | `energy` · threshold 900, silence 600 ms, min speech 450 ms | noise rejection: below the threshold is not voice, an utterance shorter than the minimum never reaches the STT. `webrtc` optional |
+| `BARGE_IN_ENABLED` · `BARGE_IN_MIN_MS` | `true` · `700` | interruptions: speech must last this long while the bot talks (bangs and coughs are shorter) |
 | `BACKEND_TIMEOUT_S` · `BACKEND_CHAT_TIMEOUT_S` | `15` · `120` | the local LLM can be slow |
 | `WS_IDLE_TIMEOUT_S` · `LOG_LEVEL` | `60` · `INFO` | |
 
