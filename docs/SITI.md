@@ -18,12 +18,37 @@ sostituite `localhost` con l'IP di quella macchina (vedi [le porte](#porte-e-fir
 
 Per non aprire il browser da soli: `set AI4R_NO_BROWSER=1`.
 
+### Quale indirizzo uso adesso?
+
+| Voglio… | Vado su | Note |
+|---|---|---|
+| provare la **voce** (anche le soglie anti-rumore) sul PC voce | [voce.localhost:8003/test-voice](http://voce.localhost:8003/test-voice) | la tua voce va direttamente al tuo server voce; è la pagina da usare per tarare `BARGE_IN_MIN_MS`, `VAD_MIN_SPEECH_MS`, `VAD_ENERGY_THRESHOLD` (nel `.env`, poi riavviare il voice) |
+| il sito col pulsante voce, solo del PC voce | [localhost:8003/](http://localhost:8003/) | stesse soglie; senza database né area ristoratore del BE centrale |
+| **tutto insieme** (voce + chat + area ristoratore + database) | `https://<IP-BE>:8090/` — sul BE [completo.localhost:8090](https://completo.localhost:8090/) | serve il gateway acceso sul BE (`avvia.py`); al primo accesso: Avanzate → Procedi |
+| il sito della chat | [chat.localhost:8080](http://chat.localhost:8080/) | sul PC chat |
+| capire cosa non va | [localhost:8003/diag](http://localhost:8003/diag) · `voice\voice doctor` · `python -m showcase.peers show` | |
+
+`python entrypoint\avvia.py` **apre da solo** le pagine; `voice\voice real` (solo il voice, senza toccare gli altri) **non apre il browser**: apri tu la pagina di test e
+aspetta che nel terminale compaia "models ready" (finché i modelli non sono caricati la pagina dice "Carico i modelli vocali…"). `voice real` non si annuncia al gateway:
+se il sito completo non vede la voce, sul BE: `python -m showcase.peers set voice <IP-VOICE>`.
+
+### Indirizzi su questa rete (oggi — aggiornare se gli IP cambiano)
+
+| Macchina | IP | Pagine (da un altro PC senza microfono, o dal PC stesso) |
+|---|---|---|
+| **BE** | `10.10.95.34` | [sito completo](https://10.10.95.34:8090/) · [Swagger](http://10.10.95.34:8000/docs) · [salute BE](http://10.10.95.34:8000/api/health) · [sito `frontend/`](http://10.10.95.34:8080/) · [area ristoratore (BE)](http://10.10.95.34:8000/api/staff) |
+| **VOICE** | `10.10.93.153` | [test voce](http://10.10.93.153:8003/test-voice) · [sito voce](http://10.10.93.153:8003/) · [diagnosi](http://10.10.93.153:8003/diag) · [pronto?](http://10.10.93.153:8003/ready) |
+| **CHAT** | da `python -m showcase.peers show` sul BE | `:8501` Streamlit · `:8002/health` API · `:8080` il suo sito |
+
+Da questi indirizzi con IP il **microfono non funziona** (il browser lo concede solo su `localhost`, `*.localhost` e `https://`): per parlare usate gli indirizzi
+`*.localhost` o il sito completo in HTTPS. Le pagine di sola lettura (diagnosi, Swagger, salute) vanno bene da qualunque PC.
+
 ## 2. Pagine del servizio VOICE (porta 8003)
 
 | Pagina | Link | Cosa c'è dentro |
 |---|---|---|
 | Sito voce | [localhost:8003/](http://localhost:8003/) | stesso sito completo, servito dal server voce (il microfono funziona solo da `localhost`) |
-| Test voce | [localhost:8003/test-voice](http://localhost:8003/test-voice) | orb + schede STATO / TECNICA; banner **VOICE / TESTS** se il BE è finto |
+| Test voce | [localhost:8003/test-voice](http://localhost:8003/test-voice) | orb + schede STATO / TECNICA, trascrizione in diretta, pop-up della prenotazione; banner **VOICE / TESTS** con il BE in uso. I vecchi `/prova-vocale` e `/prova-vocale-test` portano qui |
 | Scheda tecnica | [localhost:8003/tech](http://localhost:8003/tech) | modelli, logica, punti di forza e deboli (stampabile in PDF) |
 | Come è fatto il codice | [localhost:8003/tech-codice](http://localhost:8003/tech-codice) | la pipeline file per file |
 | L'idea in parole semplici | [localhost:8003/tech-idea](http://localhost:8003/tech-idea) | per chi non è tecnico (ristoratore) |
