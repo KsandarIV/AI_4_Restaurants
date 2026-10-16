@@ -20,7 +20,7 @@ Perché un reverse proxy invece di una copia del sito su ogni PC: **una sola ori
 punto dove aggiungere autenticazione, rate limiting e log); i client non conoscono mai dove stanno VOICE e CHAT (possono cambiare
 IP senza toccare nessun browser); **HTTPS termina qui**, ed è ciò che dà un *secure context* (quindi il **microfono**) ai PC CHAT e VOICE.
 
-## Cosa succede con `python entrypointvvia.py`
+## Cosa succede con `python entrypoint\avvia.py`
 
 Su ogni macchina, oltre al componente del ruolo, partono i servizi e si apre il browser **da soli**: la **pagina di test del proprio
 ruolo** e il **sito completo**.
@@ -80,7 +80,7 @@ basta ricaricare. Lo stesso gateway serve `staff.html` e gli asset di `frontend/
 .venv\Scripts\python showcase\gateway.py                      :: gateway sul BE (https :8090)
 .venv\Scripts\python showcase\gateway.py --no-tls             :: solo HTTP (il microfono funziona solo da localhost)
 .venv\Scripts\python -m http.server 8080 --directory frontend  :: solo il sito di frontend/ (come prima)
-voiceoice local                                              :: test della voce con BE finto
+voice\voice local                                              :: test della voce con BE finto
 ```
 
 ## Per non andare in conflitto

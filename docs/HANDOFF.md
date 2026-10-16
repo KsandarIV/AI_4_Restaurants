@@ -95,7 +95,7 @@ To do (BE team), emerso preparandole: `/api/chat/stream` e' `async` ma chiama `p
 Aggiunti in `docs/studio/voice/`: `MANUALE_TECNICO.md` (comandi per componente, test, sessioni live, configurazioni di avvio), `flowchart_flusso_codice.svg` (+ `05_flowchart_verticale.pdf`), sezione sull'entrypoint in `entrypoint/README.md`.
 
 ## Handoff 2026-10-16 — siti della demo automatici (cartella `showcase/`), da VOICE a team
-Stato: fatto; da provare sulle tre macchine con `python entrypointvvia.py`.
+Stato: fatto; da provare sulle tre macchine con `python entrypoint\avvia.py`.
 Fatto: all'avvio si aprono da soli i siti: BE `solo-be.localhost:8080` + `completo.localhost:8090`, CHAT `chat.localhost:8080`
 (parte da solo `http.server` su `frontend/`), VOICE `voce.localhost:8003/test-voice`. Il sito completo e' il sito voce
 (orb animato + finestrella chat + prenotazioni) servito in locale da `showcase/serve.py` e puntato al PC voce.
