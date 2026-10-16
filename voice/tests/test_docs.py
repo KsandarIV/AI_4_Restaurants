@@ -76,3 +76,55 @@ def test_prompt_defines_role_and_actions() -> None:
     assert build_system_prompt("") == VOICE_AGENT_PROMPT
     assert "Rispondi in italiano di default" in VOICE_AGENT_PROMPT and "ambiente specifico" in VOICE_AGENT_PROMPT
     assert build_system_prompt("  custom  ") == "custom"
+
+
+def _readme() -> str:
+    return (VOICE / "README_VOICE.md").read_text(encoding="utf-8")
+
+
+def test_every_setting_named_in_the_readme_exists() -> None:
+    """The configuration table is written from the code: a renamed or removed setting must fail here."""
+    import re
+
+    from voicebot.config import Settings
+
+    section = _readme().split("## Configuration", 1)[1].split("## Files", 1)[0]
+    first_cells = [line.split("|")[1] for line in section.splitlines() if line.startswith("| `")]  # the variable names only
+    named = {n for cell in first_cells for n in re.findall(r"`([A-Z][A-Z0-9_]{3,})`", cell)}
+    fields = {name.upper() for name in Settings.model_fields}
+    missing = {n for n in named if n not in fields and not n.startswith("VAD_")}  # "VAD_*" stands for a family
+    assert len(named) >= 20 and not missing, missing
+
+
+def test_every_event_in_the_readme_is_emitted_by_the_code() -> None:
+    import re
+
+    src = "".join((VOICE / "src" / "voicebot" / p).read_text(encoding="utf-8")
+                  for p in ("pipeline/session.py", "orchestrator.py", "pipeline/server.py"))
+    table = _readme().split("## WebSocket protocol", 1)[1].split("## BE contract", 1)[0]
+    events = set(re.findall(r"`([a-z_]+)`", table)) & {
+        "loading", "ready", "heard", "transcript", "thinking", "reply", "barge_in", "registered", "reservation",
+        "reservation_confirmed", "call_ended", "error"}
+    assert len(events) == 12
+    for event in events:
+        assert f'"{event}"' in src, event
+
+
+def test_files_and_pages_named_in_the_readme_exist() -> None:
+    import re
+
+    readme = _readme()
+    tree = readme.split("## Files", 1)[1].split("## The complete site", 1)[0]
+    base = VOICE / "src" / "voicebot"
+    for name in re.findall(r"\b([a-z_]+\.py)\b", tree):
+        assert any(base.rglob(name)) or (VOICE / name).exists(), name
+    for name in ("voice.bat", "test.bat", "Dockerfile", ".dockerignore", "pyproject.toml"):
+        assert (VOICE / name).is_file(), name
+    pages = readme.split("## Pages served", 1)[1].split("## The conversation", 1)[0]
+    from voicebot.config import Settings
+    from voicebot.pipeline.server import create_app
+
+    routes = {getattr(r, "path", "") for r in create_app(Settings()).routes}
+    for page in ("/health", "/ready", "/diag", "/test-voice", "/ws/voice", "/site/config", "/site/menu", "/site/info",
+                 "/site/reservation/{code}", "/site/chat/session", "/site/chat/message", "/tech", "/tech-codice", "/tech-idea"):
+        assert page in pages and page in routes, page

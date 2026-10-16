@@ -92,12 +92,13 @@
 | Servizio | Porta | Health | Dove |
 |---|---|---|---|
 | BE (FastAPI) | 8000 | `/api/health` | macchina BE · Swagger su `/docs` |
-| Sito vetrina (`frontend/`) | 8080 | `/` | macchina BE (servito con `http.server`) |
+| Sito vetrina (`frontend/`) | 8080 | `/` | macchina BE (servito con `http.server`); sulla CHAT parte da solo |
+| **Gateway** (sito completo, reverse proxy) | 8090 (https) | `/health` | macchina BE · `showcase/gateway.py` · gli altri PC aprono `https://<IP-BE>:8090/` |
 | CHAT Streamlit | 8501 | `/_stcore/health` | macchina CHAT |
 | API CHAT per il sito | 8002 | `/health` | macchina CHAT |
 | VOICE (sito + WebSocket) | 8003 | `/health` | macchina VOICE · WS `/ws/voice` · test `/test-voice` |
 
-Firewall: apri **8000, 8080, 8501, 8002, 8003 TCP in ingresso** (l'entrypoint prova da solo; altrimenti stampa il comando `netsh` da lanciare come amministratore).
+Firewall: apri **8000, 8080, 8090 (BE), 8501, 8002 (CHAT), 8003 (VOICE) TCP in ingresso** (l'entrypoint prova da solo; altrimenti stampa il comando `netsh` da lanciare come amministratore).
 
 ---
 
@@ -291,6 +292,8 @@ python -m http.server 8080 --directory frontend      :: avvio manuale; con avvia
 
 Aprire `http://localhost:8080` **sul PC che lo ospita** (per il microfono). Gli indirizzi dei tre componenti sono in `frontend\js\config.js` (**unico** punto da modificare).
 
+**Sito completo (chat + voce + area ristoratore).** Sul BE `avvia.py` avvia anche il **gateway** (`showcase/gateway.py`, https :8090): un reverse proxy che serve il sito e inoltra `/api/*` al BE, `/voice/*` (WebSocket compreso) al PC VOICE e la finestrella chat al PC CHAT, così **CHAT e VOICE non si parlano mai tra loro**. Si apre su `https://completo.localhost:8090/` (BE) e `https://<IP-BE>:8090/` (CHAT e VOICE; certificato autofirmato: «Avanzate → Procedi» una volta). CHAT e VOICE si annunciano al gateway (`POST /register`); gli indirizzi non si scrivono a mano: `python -m showcase.peers show`. Dettagli: [showcase/README.md](../showcase/README.md), elenco dei siti: [SITI.md](SITI.md).
+
 ### 3.7 Ollama e modelli
 
 ```bat
@@ -311,7 +314,7 @@ Il BE sceglie da solo il **primo modello installato che sa usare gli strumenti**
 
 | Cosa | Comando | Risultato atteso |
 |---|---|---|
-| **Voice** (192 test) | `voice\voice test` oppure `cd voice` + `python -m pytest tests -q` | `192 passed` |
+| **Voice** (225+ test) | `voice\voice test` oppure `cd voice` + `python -m pytest tests -q` | `225 passed` o più |
 | Voice, un file | `cd voice` + `python -m pytest tests\test_orchestrator.py -q` | |
 | Tipi (mypy strict) | `cd voice` + `python -m mypy src` | `Success: no issues found` |
 | **BE** | `python -m pytest tests -q` (dalla radice) | tutti verdi |

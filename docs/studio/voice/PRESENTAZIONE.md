@@ -20,7 +20,7 @@
 |---|---|
 | Commit / contributori / giorni | 90 · 3 · 3 (14–16 ottobre) |
 | Test del voice | 192 (mypy strict su 29 file) |
-| Porte | BE 8000 · CHAT 8501 (+ API sito 8002) · VOICE 8003 · sito vetrina 8080 |
+| Porte | BE 8000 · CHAT 8501 (+ API sito 8002) · VOICE 8003 · sito vetrina 8080 · **gateway del BE 8090 (https)** |
 | VAD | soglia 500, pausa 600 ms, voce minima 250 ms, segmento max 15 s |
 | Barge-in | parlato ≥ 300 ms mentre il bot parla |
 | Modello STT / TTS | Whisper `small` int8 su CPU · Piper `it_IT-riccardo-x_low` |
@@ -320,7 +320,7 @@ Il prompt del BE con le parti per cliente in fondo dall'inizio; un file di requi
 | Cosa | Comando / indirizzo | Cosa far notare |
 |---|---|---|
 | Diagnosi | `python -m voicebot doctor` | 12 controlli con rimedio per ognuno |
-| Test del voice | `cd voice` · `python -m pytest tests -q` · `python -m mypy src` | 192 passati, mypy pulito |
+| Test del voice | `cd voice` · `python -m pytest tests -q` · `python -m mypy src` | 225+ passati, mypy pulito |
 | Prova locale completa | `voice\voice local` (BE finto + server + browser) | banner «LOCAL TEST» |
 | Con il BE vero | `python -m voicebot` → `http://localhost:8003/` | orb, popup, «Le mie prenotazioni» |
 | Pagina tecnica | `http://localhost:8003/test-voice` | tab TECNICA/STATO, trascrizione, eventi |

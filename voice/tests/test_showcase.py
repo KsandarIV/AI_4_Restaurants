@@ -247,3 +247,18 @@ def test_the_machine_setup_hook_exists_and_cannot_stop_a_component() -> None:
     text = (ROOT / "lan" / "machine_setup.py").read_text(encoding="utf-8")
     assert "from showcase.launcher import start_showcase" in text
     assert "showcase non avviato" in text  # failure is logged, the component still starts
+
+
+def test_the_firewall_step_also_opens_the_gateway_port_on_the_be(capsys: pytest.CaptureFixture[str],
+                                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+    """CHAT and VOICE reach the complete site on the BE's gateway: without an inbound rule Windows drops them silently."""
+    sys.path.insert(0, str(ROOT / "lan"))
+    import machine_setup  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(machine_setup.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 1})())
+    config = {"be": {"port": 8000, "start": {"extra": [{"port": 8080}]}}, "chat": {"port": 8501, "start": {}}}
+    machine_setup.firewall_hint("be", config)
+    out = capsys.readouterr().out
+    assert "localport=8000" in out and "localport=8080" in out and "localport=8090" in out
+    machine_setup.firewall_hint("chat", config)
+    assert "localport=8090" not in capsys.readouterr().out  # only the BE hosts the gateway

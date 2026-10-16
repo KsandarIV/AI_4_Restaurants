@@ -31,6 +31,9 @@ Per non aprire il browser da soli: `set AI4R_NO_BROWSER=1`.
 | Pronto? | [localhost:8003/ready](http://localhost:8003/ready) | 200 = modelli caricati **e** BE raggiungibile |
 | Salute | [localhost:8003/health](http://localhost:8003/health) | `{"status":"ok"}` |
 
+Il sito sulla 8003 e il sito completo sulla 8090 sono la **stessa pagina**: il primo parla direttamente con questo server voce, il secondo passa dal gateway
+sul BE (database, area ristoratore, chat). Per la demo a tre macchine usate il completo.
+
 Da riga di comando: `voice\voice doctor` (cosa non va), `voice\voice local` (test locale con BE finto, apre [la pagina di test](http://localhost:8003/test-voice)).
 
 ## 3. Pagine del BE (porta 8000)
@@ -63,12 +66,12 @@ Da riga di comando: `voice\voice doctor` (cosa non va), `voice\voice local` (tes
 |---|---|---|
 | BE (API) | 8000 | BE |
 | Sito `frontend/` | 8080 | BE e CHAT |
-| Sito completo | 8090 | tutte |
+| Sito completo (gateway HTTPS) | 8090 | BE; gli altri PC lo aprono su `https://<IP-BE>:8090/` |
 | API chat | 8002 | CHAT |
 | Chat Streamlit | 8501 | CHAT |
 | Voce (sito, test, WebSocket) | 8003 | VOICE |
 
-Da un altro PC: `http://<IP-macchina>:<porta>/…` (le pagine senza microfono). Il **microfono** funziona solo su `localhost`
+Il BE deve avere aperte **8000, 8080 e 8090** in ingresso (`avvia.py` le crea o stampa i comandi `netsh`). Da un altro PC: `http://<IP-macchina>:<porta>/…` (le pagine senza microfono). Il **microfono** funziona solo su `localhost`
 o `*.localhost`: usate gli indirizzi della sezione 1.
 
 ## Se un indirizzo non si apre

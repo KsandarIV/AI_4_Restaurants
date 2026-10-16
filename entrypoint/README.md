@@ -32,7 +32,7 @@ Fa tutto in ordine e si ferma con istruzioni chiare al primo problema:
 finché non li fissi: con IP statici, su ogni macchina `python lan\machine_setup.py --pubblica-ip`, poi un solo PC
 fa commit e push di `lan/lan_config.json` e gli altri `git pull`.
 
-Manuale completo (comandi, test, configurazioni di avvio): [docs/studio/voice/MANUALE_TECNICO.md](../docs/studio/voice/MANUALE_TECNICO.md).
+Manuale completo (comandi, test, configurazioni di avvio): [docs/MANUALE_TECNICO.md](../docs/MANUALE_TECNICO.md).
 
 Varianti:
 
@@ -104,7 +104,7 @@ git push
 
 ## Siti della demo (automatici)
 
-Dopo `python entrypointvvia.py` si aprono da soli i siti di ogni macchina (BE: `solo-be.localhost:8080` e
+Dopo `python entrypoint\avvia.py` si aprono da soli i siti di ogni macchina (BE: `solo-be.localhost:8080` e
 `completo.localhost:8090`; CHAT: `chat.localhost:8080`; VOICE: `voce.localhost:8003/test-voice`). Il sito completo
 si apre anche su CHAT e VOICE. Dettagli e motivi (microfono, `*.localhost`): [showcase/README.md](../showcase/README.md).
 `AI4R_NO_BROWSER=1` per non aprire il browser.

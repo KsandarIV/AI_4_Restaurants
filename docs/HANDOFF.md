@@ -119,3 +119,13 @@ Regola della traccia applicata: CHAT e VOICE parlano solo con il BE. Il sito com
 `/voice/site/chat/*` -> PC CHAT. I PC CHAT e VOICE aprono `https://<IP-BE>:8090/` (certificato autofirmato: "Avanzate -> Procedi" una volta).
 HTTPS serve per il microfono; `cryptography` e' ora in `setup/requirements/be.txt` (rilanciare `avvia.py` sul BE). Il PC voce non chiama piu' la chat.
 Verificato: wss attraverso il gateway verso un server voce reale (ready + audio), BE reale proxato, 230 test.
+
+## Handoff 2026-10-16 (pomeriggio) — documentazione del voice riscritta dal codice + porta 8090 nel firewall, da VOICE a team
+Documentazione: `voice/README_VOICE.md` e `voice/documentazione.md` riscritti leggendo il codice attuale (conversazione con registrazione "pigra", rinvio della richiesta,
+guardia anti-"parlo degli strumenti", finestre di contesto, riepilogo finale, eventi `registered/reservation/reservation_confirmed/call_ended`, riscaldamento del BE, gateway).
+Allineati: `docs/SITI.md`, `docs/FLUSSO.md` (stella con gateway, microfono/HTTPS), `showcase/README.md` (tabella del gateway, firewall), `lan/README.md`, `entrypoint/README.md`,
+`docs/MANUALE_TECNICO.md` + `_sorgenti/manuale_src.md` (porte, gateway, numero di test), `docs/studio/voice/PRESENTAZIONE.md`. I PDF in `docs/studio/voice/` NON sono rigenerati
+(`python docs/studio/voice/_sorgenti/build.py`, serve Edge/Chrome). Tre test (`test_docs.py`) verificano che impostazioni, eventi, file e pagine citati nel README esistano nel codice.
+Correzione trovata rileggendo il codice: il firewall (`lan/machine_setup.firewall_hint`) apriva solo le porte di `lan_config.json`, **non la 8090 del gateway**: CHAT e VOICE non potevano
+aprire `https://<IP-BE>:8090`. Ora il BE apre anche la 8090 (`EXTRA_FIREWALL_PORTS` in `showcase/launcher.py`, un blocco guardato in `firewall_hint`). Sul BE: rilanciare `avvia.py`
+(o `netsh advfirewall firewall add rule name="AI4R-be-8090" dir=in action=allow protocol=TCP localport=8090` da amministratore).

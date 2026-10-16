@@ -32,7 +32,7 @@ from showcase import peers
 GATEWAY_PORT = 8090
 FRONTEND_PORT = 8080
 VOICE_PORT = 8003
-GATEWAY_VERSION = 4 # must match showcase/gateway.py: an older server left on the port is reported, not trusted
+GATEWAY_VERSION = 4  # must match showcase/gateway.py: an older server left on the port is reported, not trusted
 
 _UNVERIFIED = ssl.create_default_context()  # the gateway is self-signed: for a *health probe* we only need it to answer
 _UNVERIFIED.check_hostname = False
@@ -57,6 +57,10 @@ def probes(role: str, be_host: str) -> dict[str, str]:
     return {"solo-be": f"http://127.0.0.1:{FRONTEND_PORT}/", "completo": gateway,
             "chat": f"http://127.0.0.1:{FRONTEND_PORT}/", "voce": f"http://127.0.0.1:{VOICE_PORT}/health"}
 
+
+# Ports a role must accept from OTHER machines besides the ones in lan_config.json (read by lan/machine_setup.firewall_hint):
+# the BE gateway is what CHAT and VOICE open in the browser. Without this rule Windows drops their connections silently.
+EXTRA_FIREWALL_PORTS = {"be": [GATEWAY_PORT]}
 
 NAMES = names("be", "")  # kept for documentation and tests: the BE's view
 # Pages opened automatically per role: its own test page + the complete site.

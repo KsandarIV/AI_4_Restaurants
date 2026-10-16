@@ -283,6 +283,13 @@ def firewall_hint(role: str, config: dict[str, object]) -> None:
         assert isinstance(svc, dict)
         if svc.get("port"):
             ports.append(int(svc["port"]))
+    try:  # ports of the demo sites (BE gateway): defined next to the code that listens on them
+        sys.path.insert(0, str(ROOT))
+        from showcase.launcher import EXTRA_FIREWALL_PORTS
+
+        ports += [p for p in EXTRA_FIREWALL_PORTS.get(role, []) if p not in ports]
+    except Exception:  # noqa: BLE001 - never block the firewall step for the demo sites
+        pass
     for port in [p for p in ports if p > 0]:
         rule = f"AI4R-{role}-{port}"
         cmd = (f'netsh advfirewall firewall add rule name="{rule}" '

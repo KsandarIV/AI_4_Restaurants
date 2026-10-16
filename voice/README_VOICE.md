@@ -1,261 +1,196 @@
 # Voice bot — table booking for the restaurant (Traccia 3, VOICE member)
 
-The voice bot is the **chat bot with ears and a mouth**: same registration dialogue, same
-anonymisation, same BE endpoints, same booking confirmation (decided by the BE) — only the
-transport is speech. All models run **locally**; the BE (separate LAN machine with the LLM and
-SQLite) is reached over HTTP only.
+The voice bot is the **chat bot with ears and a mouth**: same BE endpoints, same anonymisation, same registration
+(name + phone) and the same booking confirmation (decided by the BE) — only the transport is speech. All speech models run
+**locally**; the BE (separate LAN machine with the LLM and SQLite) is reached over HTTP only.
+
+> Reference written from the code. Deeper technical notes: [documentazione.md](documentazione.md). Where every site lives:
+> [../docs/SITI.md](../docs/SITI.md). The complete site (BE gateway): [../showcase/README.md](../showcase/README.md).
 
 ## Simple commands
 
-**What is v1?** The live voice bot (WebSocket, VAD, streaming, barge-in). `voice local` tests **v1**, not the
-speech-to-text/text-to-speech chat (that is `voice v2`). You test v1 on the **test page** (the orb, with the
-side tabs TECNICA and STATO):
+| I want to… | Command (repo root) |
+|---|---|
+| **Test v1 locally** — stub BE, nothing else needed | `voice\voice local` (`--fake` = no speech models; `--port N`; `--no-browser`) |
+| **Run the real component** on the VOICE PC (BE already up) | `voice\voice real` (checks the BE, waits for it up to `--wait` s, then serves) |
+| **The full three-machine flow** | `python entrypoint\avvia.py` (pull, setup, firewall, waits for the BE, starts `python -m voicebot`, opens the sites) |
+| Why does it not work? | `voice\voice doctor` (`--be-url URL`, `--json`, `--load-models`) |
+| v2: voice chat from this PC, no browser | `voice\voice v2` (`--text` type instead of speak, `--no-speaker`, `--verbose`) |
+| Live call from this PC, no browser | `voice\voice live ws://<voice-host>:8003/ws/voice` (`--half-duplex`) |
+| Run the tests | `voice\voice test` |
 
-| I want to… | Command (from the repo root) | Opens |
-|---|---|---|
-| **Test v1 locally** — stub BE, nothing else needed | `voice\voice local`  (`--fake` = no speech models, page/flow only) | `/test-voice`: banner **VOICE / TESTS — BE in uso: stub** |
-| **Test v1 against the real BE on the LAN** (one component) | `voice\voice real`  then open `http://localhost:8003/test-voice` | `/test-voice`: banner shows the real BE in use |
-| **The full three-machine flow**, as always | `python entrypoint\avvia.py`  (pull, setup, firewall, waits for the BE, starts `python -m voicebot`) | same pages on the VOICE machine |
-| Find out why something does not work | `voice\voice doctor`  (also the STATO tab) | |
-| v2: voice chat from this PC, no browser, one question = one answer | `voice\voice v2`  (`--text` = type instead of speak) | |
-| Live call from this PC without browser | `voice\voice live ws://<voice-host>:8003/ws/voice` | |
-| Run the tests | `voice\voice test` | |
+`voice\voice` is `voice\voice.bat`; every command also works as `python -m voicebot <command>`
+(`python -m voicebot` alone = `serve`, what `avvia.py` starts on the VOICE machine).
 
-`voice\voice` is `voice\voice.bat`; the same commands work as `python -m voicebot <command>`.
-Both pages are served by the same server and talk to the same BE (`BACKEND_BASE_URL`): the restaurant site at `/`
-and the test page at `/test-voice` (technical tabs, live transcript, events, always with the banner that names the BE
-in use). The old addresses `/prova-vocale` and `/prova-vocale-test` redirect to `/test-voice`.
+**What is v1?** The live voice bot (WebSocket, VAD, streaming, barge-in). `voice local` tests **v1**. v2 is the
+one-question-one-answer speech chat (`voice v2`). Both share one conversation engine.
 
-The test page is the original one — liquid orb with its animations, **TECNICA** tab (technical sheets) and
-**STATO** tab (voice / microphone / WebSocket / BE / model + every check with its fix + latest events) —
-now also showing the live transcript under the orb, reconnecting by itself and stopping the sound at once
-when you interrupt.
+## Pages served by the voice server (port 8003)
 
-## The complete site (chat + voice across the three PCs)
+| Page | What it is |
+|---|---|
+| `/` | the **restaurant site** with the voice assistant: orb button that morphs into the live orb (golden ring, animations), booking pop-up, chat window, **My reservations**, sections *Chi siamo · Menu · Le mie prenotazioni · Dove siamo · Contatti*, link to the staff area. Italian or English (`VOICE_LANGUAGE`) |
+| `/test-voice` | the **test page**: liquid orb + side tabs **STATO** (voice / mic / WebSocket / BE / model, every check with its fix, latest events) and **TECNICA** (technical sheets), live transcript, booking pop-up, banner **VOICE / TESTS** with the BE it uses. `/prova-vocale` and `/prova-vocale-test` redirect here |
+| `/tech` · `/tech-codice` · `/tech-idea` | printable technical sheet · how the code works · the idea in plain words |
+| `/health` · `/ready` · `/diag` | liveness · models loaded **and** BE reachable (503 otherwise) · full JSON report of every check |
+| `/site/config` · `/site/menu` · `/site/info` · `/site/reservation/{code}?customer_id=` | what the site calls: the voice server proxies the BE (the page never talks to the BE directly; the BE answers 404 for anybody else's code) |
+| `/site/chat/session` · `/site/chat/message` | the site's chat window: forwarded to the CHAT service when `CHAT_SERVICE_URL` is set (else 503 "not connected") |
+| `/ws/voice` | the call (WebSocket) |
 
-`http://completo.localhost:8090/` (opened automatically by `avvia.py`, and available on every machine) is this very
-site served locally by `showcase/serve.py` and pointed at the voice PC: the microphone works (`*.localhost` is a secure
-page) while voice, `/site/*` and the chat window go over the network to the voice server and, through it, to the CHAT PC.
-The voice server therefore allows CORS. See `showcase/README.md`.
+CORS is open (`*`): the site can be served from another origin (the BE gateway does). LAN demo setting.
 
-## The site (same kind of site as the chat bot's)
+## The conversation (same rules as the chat bot)
 
-Open `http://localhost:8003/` (local mode prints the exact address). It has the restaurant look of
-`frontend/` (copied stylesheet): menu with filters, hours/address/phone from the BE, the voice
-assistant and **My reservations**. Bottom right there are two buttons: **Scrivi** (the chat bot) and **Prenota a voce**;
-the voice button **morphs** (gradually) into a big floating orb hooked to the lower edge of the red band, with the golden ring growing from behind it and the dots born inside it; tapping the orb hangs up and it shrinks back into the button (no panel, no transcript: that is on
-`/test-voice`). The chat window goes through `/site/chat/*` to the CHAT service and answers "non è collegato" unless
-`CHAT_SERVICE_URL` is set.
+`orchestrator.py` (`BackendOrchestrator`), two phases:
 
-- every booking made, changed or cancelled by voice appears there with its **live status**
-  (`Confirmed` / `Cancelled`) read from the BE;
-- "Check" looks up any code of yours; "Refresh all" re-reads them. Lookups only work from the browser
-  where you registered (the anonymous `customer_id` is kept in `localStorage`) and the BE answers
-  404 for anybody else's code;
-- the page never talks to the BE directly: `/site/menu`, `/site/info`, `/site/reservation/{code}` go
-  through the voice server. Page language follows `VOICE_LANGUAGE` (it/en).
+1. **CHAT** — the call opens with a short welcome ("Benvenuto alla Trattoria Bella Napoli! Come posso aiutarla?"); nothing is
+   asked yet. Every utterance goes **anonymise → BE (`/api/chat` or the SSE stream) → restore placeholders → TTS**.
+   Menu and information never need registration.
+2. **REGISTRATION** — entered **only when the caller talks about booking** (`contacts.wants_booking`, e.g. "prenotare", "tavolo per"):
+   ask name + phone in one utterance (digits may be spoken: "tre tre tre…"; a number cut by a pause is joined), read the phone back digit
+   by digit, wait for yes/no, accept corrections, give up after 3 empty turns (then only menu/info). Then `POST /api/customers` →
+   anonymous `customer_id`. **The LLM never takes part and never sees these data.** The request that triggered it is kept and sent to the BE
+   (anonymised) right after the registration, so the caller does not repeat it. It stays stored until the BE has really answered: a barge-in or
+   a BE error during that first slow turn cannot lose it (the caller would be registered with no booking).
 
-The orb is the same liquid orb as the test page. Other pages: `/test-voice` (+ `/tech`, `/tech-codice`, `/tech-idea`, `/diag`).
+Around the BE answer:
 
-## The spoken final report
+- **Anonymiser** (`anonymizer.py`): `[TYPE_N]` placeholders (`[NOME_1]`, `[TELEFONO_1]`…, the chat bot's format, recognised by the BE); a
+  streaming restorer never speaks half a placeholder; `pii.scrub_pii` is a stateless last-line net on everything leaving for the BE.
+- **Tool-talk guard** (`toolguard.py`): a reply in which the LLM names a tool ("devo prima chiamare get_menu…") is dropped and the turn retried
+  once with an instruction; if it happens again a neutral sentence is spoken. Only the *shape* of the text is checked.
+- **Spoken final report**: after a booking, change or cancellation (a `RES-…` code in the reply) the bot reads back the **real data** from
+  `GET /api/reservations/{code}?customer_id=` (built by code, not by the LLM; numbers, dates, times as words via `spoken.py`) and asks for a last
+  yes. A short unqualified yes ("sì", "sì, tutto corretto") closes it ("Perfetto…", event `reservation_confirmed`, fresh BE session); "sì, ma alle 21"
+  goes to the agent as a change; a no asks what to change. The same state is never read twice; if the lookup fails the bot stays silent.
+- **Context windows**: the BE keeps the dialogue as the LLM's context. After `CONTEXT_MAX_EXCHANGES` (20) BE turns without reaching a booking the
+  bot starts a fresh BE session with a spoken recap; after `CONTEXT_MAX_RESETS` (3) refreshes it ends the call politely (event `call_ended`). The
+  customer stays registered. A reached booking resets the counters.
+- **BE warm-up** (`WARM_BACKEND`): at start-up one throw-away turn makes the LLM read its long prompt once, so the first caller does not wait.
+- **Errors** become short spoken apologies (BE unreachable / slow / LLM down / server error), never technical text.
 
-After a booking, a change or a cancellation the voice bot **reads back what really happened** and asks
-for a last yes — built by code from `GET /api/reservations/{code}` (owner only), not by the LLM:
+There are **no local intent shortcuts**: the BE agent decides tools, confirmation, allergy answers and the "not registered" rule.
+`prompts.py` holds the agent's role/actions prompt in Italian; the BE reads only the last user message and builds its own voice prompt from
+`client_type="voice"`, so the text is the specification of the behaviour (and is sent as `system` message of each stream request).
+`LLM_SYSTEM_PROMPT` overrides it.
 
-> "Riepilogo finale per Mario Rossi: la sua prenotazione è confermata, per due persone, venerdì sedici
-> ottobre, alle venti e trenta, in terrazza, tavolo undici. Il codice è R E S, 9 A 8 B 2 C. È tutto corretto?"
-
-- **yes** (short, unqualified: "sì", "sì, tutto corretto") → "Perfetto per Mario Rossi, grazie! La aspettiamo…";
-  "sì, ma alle 21" is NOT a yes: it goes to the agent as a change request;
-- **no** → "Mi dica cosa vuole cambiare…" and the caller changes or cancels by voice;
-- a change says "Prenotazione aggiornata…", a cancellation "La prenotazione RES-… risulta cancellata";
-- the same state is never read twice; if the lookup fails the bot stays silent rather than say something wrong.
-
-The same facts reach the page as `registered` / `reservation` events (that is what fills "My reservations").
-
-## Modes
-
-Two modes share one conversation engine (`orchestrator.py`):
-
-| Mode | What it is | Use it for |
-|---|---|---|
-| **v1 live** | Real-time, full-duplex: browser/mic → WebSocket → VAD → STT → BE (SSE) → TTS → speaker, with barge-in | The demo with interruptions |
-| **v2 on-demand** | Press ENTER, speak, hear the answer. Same chat conversation, one question = one answer, no streaming, no echo problems | Any PC, noisy rooms, no browser; the safe fallback |
-| **live from any PC** | Live call with the local mic/speaker (browsers refuse the mic on plain-HTTP LAN addresses), auto-reconnect | Live mode from another machine |
-
-v2 can also ride on the running CHAT service (`CHAT_SERVICE_URL=http://<chat>:8002`): then the
-voice bot is just STT/TTS around `chat/api.py`, with the chat bot working invisibly underneath.
-
-## Files
-
-```
-voice/
-├── pyproject.toml           # packaging + pytest (pythonpath=src) + mypy strict + ruff
-├── Dockerfile               # multi-stage image of the live server
-├── voice.bat                # one entry point: local | real | doctor | v2 | live | test
-├── test.bat                 # tests with the shared .venv, one line
-├── src/voicebot/
-│   ├── __main__.py          # `python -m voicebot [local|real|doctor|v2|live]`, graceful shutdown, JSON logs
-│   ├── local.py             # `voicebot local`: stub BE + voice server + browser in one process
-│   ├── spoken.py            # numbers/dates/times as words for the final report
-│   ├── devtools/stub_be.py  # stub BE with the real contract (also used by tests/stub_be.py)
-│   ├── config.py            # Settings (env / shared .env), path resolution for models
-│   ├── interfaces.py        # AbstractVAD / AbstractSTT / AbstractLLMOrchestrator / AbstractTTS
-│   ├── vad.py               # EnergyVAD (default) + WebRtcVADWrapper, time-based, chunk-size independent
-│   ├── stt.py               # FasterWhisperSTT (local, shared, warm) + scriptable FakeSTT
-│   ├── tts.py               # PiperTTS (old+new piper API, sentence streaming) + FakeTTS
-│   ├── orchestrator.py      # ★ the chat conversation: registration -> anonymise -> BE -> restore
-│   ├── contacts.py          # registration dialogue (name + phone, spoken digits, it/en)
-│   ├── anonymizer.py        # PII removal with restorable [TYPE_N] placeholders (+ stream restorer)
-│   ├── pii.py               # stateless last-line PII net on everything leaving for the BE
-│   ├── messages.py          # everything the bot says without the LLM (it/en)
-│   ├── prompts.py           # the agent's role/actions prompt (Italian, answers in the customer's language)
-│   ├── backend.py           # BackendClient: retries, error mapping, SSE, /api/customers
-│   ├── chat_service.py      # optional v2 transport through chat/api.py
-│   ├── v2.py                # on-demand voice chat (mic -> STT -> chat -> TTS -> speaker)
-│   ├── live_client.py       # headless live call with reconnection
-│   ├── diagnostics.py       # shared checks behind /diag and the doctor
-│   ├── doctor.py            # `python -m voicebot.doctor`: why does it not work?
-│   ├── audio.py             # PCM helpers, SentenceChunker, speakable()
-│   ├── logging_json.py      # structured JSON logging
-│   └── pipeline/
-│       ├── session.py       # ★ core loop: 3 asyncio tasks + bounded queues + barge-in
-│       ├── server.py        # FastAPI: /health /ready /diag /ws/voice + test pages
-│       ├── site/            # the site: index.html, app.js, site.css (look copied from frontend/)
-│       └── *.html           # /test-voice (diagnostic page), /tech*
-└── tests/                   # 150+ tests, no models and no network needed
-```
-
-## The conversation
-
-1. **Short welcome**: "Benvenuto alla Trattoria Bella Napoli! Come posso aiutarla?" Nothing is asked yet;
-   menu and information work for anybody.
-2. **Registration only when the caller talks about booking** (`wants_booking` in `contacts.py`: "prenotare",
-   "tavolo", "book"...). The bot asks "name and a phone number" (no examples; a surname is accepted if given,
-   never required): extract name/phone from one utterance (digits can be spoken), read the number back digit by
-   digit, wait for yes/no, accept corrections, give up after 3 empty turns (it asks again at the next booking
-   request). Then `POST /api/customers` → anonymous `customer_id`. **The LLM never takes part and never sees
-   these data**; the request that started it is kept and sent to the BE (anonymised) right after, so the caller
-   does not repeat it.
-3. **Chat phase** — every utterance: `anonymizer.anonymize()` → BE → `restore()` → TTS.
-   Placeholders (`[NOME_1]`, `[TELEFONO_1]`) have the chat bot's exact format, which the BE recognises.
-4. **No local intent shortcuts** beyond "when to ask for contact data". The BE agent decides everything: tool
-   calls, the yes/no confirmation of bookings, allergy answers.
-5. **Booking pop-up on the site**: each booking/change shows a small summary (name, date, time, guests, room only
-   if the caller asked for one). It closes **4 seconds after the caller's spoken final "yes"**
-   (`reservation_confirmed` event) and never by click; a cancellation or hanging up closes it at once.
-   The live transcript under the orb is shown only in local test mode.
-
-**Agent prompt** (`prompts.py`): Italian, answers in the customer's language when it knows it (Italian by default),
-asks about a room before confirming, refuses past dates. The BE only reads the last user message, so it is the
-specification for the BE team until `backend/graph/prompts.py` adopts it. Speech recognition stays tied to
-`STT_LANGUAGE` / `VOICE_LANGUAGE`: other languages are understood by the LLM only if Whisper transcribes them.
-
-## Weak PC (laptop CPU, no GPU): context, speed, warm-up
-
-Measured on an i5-1235U (12 threads), `gemma4` 8B Q4: the LLM reads its prompt at ~36 tokens/s and writes ~7 tokens/s.
-The first BE turn after start-up costs ~70 s (it reads the long system prompt + tools once); once that prefix is cached
-the next turns take ~3 s. So:
-
-- **Lighter model, same weights** (nothing is downloaded): `ollama create gemma4-voice -f voice/local_llm/Modelfile`
-  (context 8192 instead of 64k, 6 threads so Whisper keeps some cores), then `OLLAMA_MODEL=gemma4-voice` in the `.env` of
-  the machine that runs the BE (and `OLLAMA_TIMEOUT_S=300` for the very first turn).
-- **Warm-up** (`WARM_BACKEND=true`): at start-up the voice server sends one throw-away turn to the BE
-  (session `voice_warmup`, customer `anon_warmup`), so the first caller does not pay the ~70 s.
-- **Shared anonymous id**: the BE writes the customer id and the date at the top of the LLM's prompt, so every new id
-  re-reads the whole prompt. All unregistered callers therefore use `anon_voice` (it identifies nobody and cannot book), and
-  the warm-up pays the prompt once. A caller's first turn after registration (their own id) is still slow on a weak CPU.
-- **Context management** (the BE keeps the dialogue as the LLM's context): every `CONTEXT_MAX_EXCHANGES` (20) BE turns
-  without reaching a booking the bot starts a **fresh BE session** and says "sto gestendo molte richieste…, ripartiamo da
-  capo: una prenotazione o una modifica?" (the customer stays registered: nobody repeats name or phone). The 3rd refresh adds
-  "a breve potrei dover ricominciare tutto da capo"; the **4th** ends the call (`call_ended` event: the page waits for the last
-  sentence, then hangs up) until the caller taps the orb again. Reaching a booking resets the counters, and the caller's final
-  "yes" starts a fresh session, so the next request begins with an empty context. `CONTEXT_MAX_RESETS` (3) is the number of
-  refreshes before the end.
-
-**Tool talk filter** (`toolguard.py`): a small model sometimes answers "devo prima chiamare get_menu, vuole che verifichi?" instead of
-using the tool. The first sentence of every BE reply is held back until it is judged (tool names, "I must call...", "vuole che
-verifichi..."); if it leaks, the reply is dropped, the turn is retried once with an instruction to use the tools silently, and if it
-leaks again the caller hears "non sono riuscito a recuperare questa informazione, può ripetere?". The prompt says the same.
-
-## Core loop (producer–consumer)
+## Core loop (producer–consumer, `pipeline/session.py`)
 
 ```
 WS reader ─PCM→ audio_in_q ─→ [VAD] ─utterance→ segment_q ─→ [STT] ─text→ text_q
    ─→ [LLM turn task] ─tokens→ token_q ─→ [TTS per sentence] ─PCM→ audio_out_q ─→ WS writer
 ```
 
-- Every queue is bounded: backpressure, never unbounded memory. Live audio drops the oldest frame
-  when late; speech output blocks instead (dropping would cut words).
-- The turn runs as its own task, so **barge-in can cancel it at any moment**, even while the BE is
-  still "thinking". Speech must last `BARGE_IN_MIN_MS` (default 300) to count: clicks and echo are ignored.
-- While the client is still playing audio sent faster than real time the bot is considered speaking.
-- STT and TTS are loaded once at startup (in the background: `/health` answers immediately,
-  `/ready` flips when the models are warm) and shared by all calls.
-- Shutdown: poison pills, task cancellation, bounded joins; JSON logs never contain what the caller said.
+- Every queue is bounded (backpressure). Live audio drops the oldest frame when late; speech output blocks (dropping would cut words).
+- The turn is its own task, so **barge-in cancels it at any moment**, even while the BE is thinking. Speech must last `BARGE_IN_MIN_MS`
+  (300) to count (clicks and echo are ignored); while the client still plays audio sent faster than real time the bot counts as speaking. The VAD
+  is not reset: it is already capturing the interrupting utterance.
+- VAD timing uses the real duration of the audio (browser chunks are 128 ms, the Python client 20 ms): pause detection lasts the same for both.
+- STT and TTS are loaded **once** at start-up in the background and shared by all calls (`/health` answers at once, `/ready` flips when warm).
+- A crashing STT/LLM turn emits an `error` event and the call goes on. Shutdown: poison pills, cancellation, bounded joins; logs (JSON) never contain what the caller said.
+
+## WebSocket protocol `/ws/voice`
+
+- client → server: binary PCM16LE mono 16 kHz frames (any size) · `{"cmd":"eos"}` · `{"cmd":"reset"}` (new conversation)
+- server → client: binary PCM16 (TTS, at `tts_sample_rate` of the `ready` event) and JSON events:
+
+| Event | Meaning |
+|---|---|
+| `loading` / `ready` | models loading / call open (`session_id`, `sample_rate`, `tts_sample_rate`) |
+| `heard` · `transcript` · `thinking` · `reply` | pause captured · what STT understood · LLM working · full text of the answer |
+| `barge_in` | the caller interrupted: stop playing |
+| `registered` | registration done (anonymous `customer_id`) |
+| `reservation` | booking created / changed / cancelled: `code`, `status`, `date`, `time`, `guests`, `table`, `location`, `customer_id`, and for the caller's own page `name`, `area` (the room only if they asked for one) |
+| `reservation_confirmed` | the caller said the final yes (the page closes its pop-up) |
+| `call_ended` | the conversation ended the call after the last sentence |
+| `error` | `detail`: `stt_timeout`, `stt_failed`, `turn_failed`, `models_failed` |
+
+A connection is stateless: clients reconnect with exponential backoff (the pages and `live_client` do).
 
 ## BE contract used
 
 | Method | Path | Use |
 |---|---|---|
 | GET | `/api/health` (`/health`) | readiness, LLM model |
-| GET | `/api/reservations/{code}?customer_id=` | the final spoken report and the site's "My reservations" (owner only, 404 otherwise) |
 | POST | `/api/customers` | `{name, phone(E.164), consent}` → `{customer_id}` — the only call carrying personal data |
-| POST | `/api/chat` | v2: `{message, session_id, customer_id, client_type:"voice"}` → `{reply}` |
+| POST | `/api/chat` | v2 and warm-up: `{message, session_id, customer_id, client_type:"voice"}` → `{reply}` |
 | POST | `/api/chat/stream` | v1: same body, SSE `data: {"token": ".."}` … `data: [DONE]` |
+| GET | `/api/reservations/{code}?customer_id=` | final report and "My reservations" (owner only, 404 otherwise) |
+| GET | `/api/menu` · `/api/info` | the site's menu and info (through `/site/*`) |
 
-`POST /api/chat` is never retried after a read timeout (the LLM could book twice); GETs are retried
-with backoff.
+`POST /api/chat` is never retried after a read timeout (the LLM could book twice); GETs retry with backoff.
 
-## WebSocket protocol `/ws/voice`
+## Configuration (`.env` at the repo root, see `.env.example`; real environment variables win)
 
-- client → server: binary PCM16LE mono 16 kHz frames (any size) · `{"cmd":"eos"}` · `{"cmd":"reset"}` (new conversation)
-- server → client: binary PCM16 (TTS, at `tts_sample_rate` of the ready event) and JSON events:
-  `ready` `loading` `heard` `transcript` `thinking` `reply` `barge_in` `error`
-- Reconnection: a connection is stateless; clients reconnect with exponential backoff
-  (the test page and `live_client` both do).
+| Variable | Default | Meaning |
+|---|---|---|
+| `BACKEND_BASE_URL` | `http://localhost:8000` | the BE (LAN IP of its machine, not `localhost`, on the real setup) |
+| `VOICE_HOST` · `VOICE_PORT` | `0.0.0.0` · `8003` | where the voice server listens |
+| `VOICE_LANGUAGE` | `it` | spoken language of the bot's own sentences and of STT (`it`/`en`) |
+| `REQUIRE_REGISTRATION` | `true` | mirror of the BE switch: name + phone before booking |
+| `CHAT_SERVICE_URL` | empty | CHAT service for the site's chat window and v2 (the gateway does not use it) |
+| `CONTEXT_MAX_EXCHANGES` · `CONTEXT_MAX_RESETS` | `20` · `3` | context windows (see above) |
+| `WARM_BACKEND` · `PRELOAD_MODELS` | `true` | warm the BE / load STT+TTS at start-up |
+| `STT_BACKEND` · `STT_MODEL` | `faster-whisper` · `small` | `fake` = no recognition; `tiny` mangles digits and names |
+| `STT_LANGUAGE` · `STT_TIMEOUT_S` · `STT_INITIAL_PROMPT` | follow `VOICE_LANGUAGE` · 30 · empty | the prompt is off: it can be echoed back |
+| `TTS_BACKEND` · `PIPER_MODEL_PATH` | `piper` · `voice/models/it_IT-riccardo-x_low.onnx` | `fake` = beeps; the path resolves from cwd, repo root or `voice/` |
+| `VAD_MODE` · `VAD_*` | `energy` · threshold 500, silence 600 ms, min speech 250 ms | `webrtc` optional |
+| `BARGE_IN_ENABLED` · `BARGE_IN_MIN_MS` | `true` · `300` | interruptions |
+| `BACKEND_TIMEOUT_S` · `BACKEND_CHAT_TIMEOUT_S` | `15` · `120` | the local LLM can be slow |
+| `WS_IDLE_TIMEOUT_S` · `LOG_LEVEL` | `60` · `INFO` | |
 
-## Run it locally by hand (what `voice local` does)
+## Files
 
-```bat
-REM from the repo root, once
-python setup\setup_env.py
-
-REM terminal 1: a stub BE with the real contract (registration, confirmation flow)
-.venv\Scripts\python voice\tests\stub_be.py 8001
-
-REM terminal 2: the voice bot pointed at it (real models; add STT_BACKEND=fake TTS_BACKEND=fake to skip them)
-set BACKEND_BASE_URL=http://127.0.0.1:8001
-.venv\Scripts\python -m voicebot.doctor
-.venv\Scripts\python -m voicebot            REM then open http://localhost:8003/test-voice
-.venv\Scripts\python -m voicebot.v2 --text  REM or chat by keyboard, hear the replies
+```
+voice/
+├── pyproject.toml           packaging + pytest (pythonpath=src) + mypy strict + ruff
+├── voice.bat · test.bat     one entry point (local|real|doctor|v2|live|test) · tests with the shared .venv
+├── Dockerfile · .dockerignore   multi-stage image of the live server (not built in CI here)
+└── src/voicebot/
+    ├── __main__.py          `python -m voicebot [serve|real|local|doctor|v2|live]`
+    ├── local.py             `local`: stub BE + voice server + test page in one process
+    ├── config.py            Settings, .env lookup, model path resolution
+    ├── interfaces.py        AbstractVAD / AbstractSTT / AbstractLLMOrchestrator / AbstractTTS
+    ├── vad.py · stt.py · tts.py · audio.py   energy/webrtc VAD · faster-whisper · Piper (old and new API) · PCM helpers, SentenceChunker, speakable()
+    ├── orchestrator.py      ★ the conversation: welcome, lazy registration, anonymise, BE, restore, report, context windows
+    ├── contacts.py · anonymizer.py · pii.py · toolguard.py   registration dialogue · placeholders · last-line PII net · tool-talk guard
+    ├── messages.py · prompts.py · spoken.py   spoken sentences it/en · agent prompt (Italian) · numbers/dates/times as words
+    ├── backend.py · chat_service.py · peers_file.py   BE client · CHAT-service transport (v2) · lazy CHAT address from the peers file
+    ├── v2.py · live_client.py   on-demand voice chat · live call without a browser (auto-reconnect)
+    ├── diagnostics.py · doctor.py   the checks behind /diag and `doctor`
+    ├── logging_json.py      structured JSON logging
+    ├── devtools/stub_be.py  stub BE with the real contract (registration, confirmation, cancel/modify, lookup, menu, info)
+    └── pipeline/
+        ├── session.py       ★ core loop: 3 asyncio tasks + bounded queues + barge-in
+        ├── server.py        FastAPI: pages, /site/*, /health /ready /diag, /ws/voice, BE warm-up
+        ├── site/            the restaurant site (index.html, app.js, site.css)
+        └── voice_test.html · tech*.html   test page · technical sheets
 ```
 
-With the real three-machine setup only `BACKEND_BASE_URL=http://<BE-IP>:8000` changes.
+## The complete site and the BE gateway
+
+On the real setup CHAT and VOICE never talk to each other: the **complete site** (chat + voice + staff area + database) is served by
+the **gateway on the BE** (`https://<IP-BE>:8090`, reverse proxy to BE, VOICE and CHAT; `showcase/`). The same site page is served here at `/` for
+local use. `python entrypoint\avvia.py` opens each machine's test page and the complete site. Details, certificate and discovery:
+[../showcase/README.md](../showcase/README.md).
 
 ## When something does not work
 
-```bat
-.venv\Scripts\python -m voicebot.doctor [--be-url http://10.10.0.5:8000] [--load-models] [--json]
-```
-
-prints OK/WARN/FAIL for the interpreter, `.env`, packages, Whisper/Piper files, audio devices,
-the voice port, **BE reachability, LLM health and the registration endpoint**, each with the fix.
-The same report is live at `http://<voice>:8003/diag` and in the STATUS drawer of the test page.
+`voice\voice doctor` prints OK/WARN/FAIL for the interpreter, `.env`, packages, Whisper/Piper files, audio devices, the voice port, **BE
+reachability, LLM health and the registration endpoint**, each with its fix. The same report is live at `/diag` and in the STATO tab.
 
 ## Tests
 
 ```bat
 cd voice
-..\.venv\Scripts\python -m pytest tests -q     REM or test.bat
-..\.venv\Scripts\python -m mypy src            REM strict typing
+..\.venv\Scripts\python -m pytest tests -q      :: 225+ tests, no models and no network needed (or: voice\voice test)
+..\.venv\Scripts\python -m mypy src             :: strict typing
 ```
 
-`tests/conftest.py` makes every test hermetic (ignores your `.env`, forces fake STT/TTS) and prints a
-clear message when pytest runs with an interpreter that lacks the dependencies (VS Code often selects
-the system Python instead of `.venv`). Layers: units (VAD, chunker, STT/TTS, config), contacts,
-anonymiser, backend client (mock transport), orchestrator (stub BE over HTTP), pipeline (barge-in,
-cancellation, failures), server + live client over real sockets (registration → booking, reconnection).
+`tests/conftest.py` makes every test hermetic (ignores your `.env`, fake STT/TTS) and explains a wrong interpreter (VS Code often picks the system
+Python instead of `.venv`). Layers: units, contacts, anonymiser, tool guard, backend client (mock transport), orchestrator and context windows
+(stub BE over HTTP), pipeline (barge-in, cancellation, failures), server + live client over real sockets, site, report, doctor, and the
+`showcase/` gateway (proxying incl. WebSocket, TLS, discovery, firewall port).
 
 ## Docker
 
@@ -264,12 +199,13 @@ docker build -t voicebot voice
 docker run --rm -p 8003:8003 --env-file .env -v %cd%\voice\models:/app/models:ro voicebot
 ```
 
-Multi-stage build (wheels built in the first stage, slim runtime, non-root user, healthcheck on `/health`).
-Models are mounted, not baked in. Set `BACKEND_BASE_URL` to the BE machine's LAN address.
+Multi-stage (wheels in the first stage, slim runtime, non-root user, healthcheck on `/health`). Models are mounted, not baked in.
+Set `BACKEND_BASE_URL` to the BE machine's LAN address. Optional `--build-arg WITH_NER=1` adds the spaCy name recogniser.
+The image has never been built here (no Docker on the development PCs).
 
 ## Brief constraints — where they are met
 
-1. Separate machines: VOICE is a standalone service, it talks to the BE only through `BACKEND_BASE_URL`.
-2. Network: HTTP/SSE + WebSocket only; no import of BE/CHAT code (the optional chat-service transport is HTTP too).
-3. Personal data: removed before sending (`anonymizer.py`, `pii.py`); name/phone go only to `/api/customers`.
+1. Separate machines: VOICE is a standalone service, it reaches the BE only through `BACKEND_BASE_URL`.
+2. Network only: HTTP/SSE + WebSocket; no import of BE/CHAT code. CHAT and VOICE meet only through the BE gateway.
+3. Personal data: removed before sending (`anonymizer.py`, `pii.py`); name and phone go only to `/api/customers`; logs never contain speech.
 4. Local models: faster-whisper, Piper, Ollama on the BE; no cloud provider anywhere in the code.

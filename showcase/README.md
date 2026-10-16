@@ -55,7 +55,8 @@ voce `require_registration` su `/site/config`):
 4. scansione limitata della rete di questo PC con la **maschera reale** (es. una /22 = 10.10.92.0-10.10.95.255; massimo /21), 128 sonde in parallelo, qualche secondo.
 
 Il risultato viene riletto **a ogni caricamento della pagina**: si può accendere il PC voce dopo, o cambiare IP, senza riavviare nulla.
-Il server voce trova da solo il PC chat allo stesso modo (`AI4R_PEERS_FILE`); `CHAT_SERVICE_URL` nel `.env`, se impostato, ha la precedenza.
+Il server voce **non** cerca il PC chat: la finestrella chat del sito completo passa dal gateway (`/voice/site/chat/*` → CHAT), mai da VOICE a CHAT.
+(`CHAT_SERVICE_URL`, e `AI4R_PEERS_FILE` se impostato, servono solo al sito servito dal server voce in locale e a v2.)
 
 ```bat
 python -m showcase.peers show                     :: cosa si sa e se risponde adesso
@@ -64,6 +65,25 @@ python -m showcase.peers set voice 10.10.95.50    :: fissa un indirizzo (solo se
 ```
 
 Se il PC voce non si trova, il sito completo mostra un avviso giallo con questo comando invece di una pagina muta.
+
+## Il gateway: cosa espone (`showcase/gateway.py`, porta 8090)
+
+| Percorso | Dove va |
+|---|---|
+| `/` · `/site-assets/*` | il sito completo (file letti a ogni richiesta) |
+| `/staff.html` · `/css/*` · `/js/*` · `/js/config.js` | area ristoratore e asset di `frontend/` (sola lettura, confinati); `config.js` generato con questa origine |
+| `/api/*` · `/docs` · `/openapi.json` | BE (`127.0.0.1:8000`): database, area ristoratore, Swagger; l'intestazione `X-API-Key` passa invariata |
+| `/voice/*` · WebSocket `/voice/ws/voice` | PC VOICE (`:8003`) |
+| `POST /voice/site/chat/session\|message` | PC CHAT (`:8002`) |
+| `POST /register?role=chat\|voice` | auto-annuncio dei PC (l'indirizzo è quello di chi chiama, verificato) |
+| `GET /health` | `{status, version, gateway, be, voice, chat}`: non blocca mai su una scansione |
+
+Se un PC manca: HTTP 502 con un messaggio chiaro, WebSocket chiuso con codice 1013 (riprova).
+
+### Firewall
+Il BE deve accettare **8000** (API), **8080** (sito `frontend/`) e **8090** (gateway): quest'ultima è quella che CHAT e VOICE aprono nel browser. `avvia.py`
+applica le regole (porte da `lan_config.json` + `EXTRA_FIREWALL_PORTS` in `showcase/launcher.py`) o stampa i comandi `netsh` da lanciare da amministratore.
+Senza la regola su 8090 Windows scarta le connessioni in silenzio.
 
 ## Perché `*.localhost` e HTTPS
 

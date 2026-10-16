@@ -2,7 +2,7 @@
 
 | File | Cosa contiene |
 |---|---|
-| `MANUALE_TECNICO.md` | **Manuale tecnico** con indice: comandi per componente, test, sessioni live, **configurazioni di avvio** (tre macchine, un PC, BE finto…), problemi e note |
+| `../../MANUALE_TECNICO.md` (in `docs/`) | **Manuale tecnico** con indice: comandi per componente, test, sessioni live, **configurazioni di avvio** (tre macchine, un PC, BE finto…), problemi e note |
 | `PRESENTAZIONE.md` | **Il copione** per presentare: passo per passo, cosa dire, perché, dove guardare nel codice, domande difficili |
 | `flowchart_flusso_codice.svg` | **Flowchart verticale** di tutto il flusso (avvio → chiamata → chiusura) · versione PDF: `05_flowchart_verticale.pdf` |
 | `00_presentazione_completa.pdf` | Tutte le 48 slide in un solo PDF |
