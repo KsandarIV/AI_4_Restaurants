@@ -91,7 +91,7 @@ def test_staff_area_is_served_with_the_real_be_address(site: str) -> None:
 def test_assets_are_served_and_paths_cannot_escape(site: str) -> None:
     assert _get(site + "/site-assets/app.js")[0] == 200 and _get(site + "/site-assets/site.css")[0] == 200
     health = json.loads(_get(site + "/health")[1])
-    assert health["version"] == serve.VERSION == launcher.SERVE_VERSION
+    assert health["version"] == serve.VERSION
     for bad in ("/site-assets/../../../../../.env", "/site-assets/%2e%2e/%2e%2e/server.py", "/js/../../.env",
                 "/css/../README.md", "/nothing"):
         assert _get(site + bad)[0] == 404, bad
@@ -187,11 +187,19 @@ def test_voice_server_chat_bridge_prefers_the_configured_url_then_the_verified_p
 
 
 def test_addresses_are_the_easy_ones_and_every_role_opens_test_page_and_complete_site() -> None:
-    assert launcher.NAMES["solo-be"] == "http://solo-be.localhost:8080/"
-    assert launcher.NAMES["completo"] == "http://completo.localhost:8090/"
-    assert launcher.NAMES["chat"] == "http://chat.localhost:8080/"
-    assert launcher.NAMES["voce"] == "http://voce.localhost:8003/test-voice"
+    be = launcher.names("be", "10.10.95.34")
+    assert be["solo-be"] == "http://solo-be.localhost:8080/"
+    assert be["completo"] == "https://completo.localhost:8090/"  # the BE reaches its own gateway through *.localhost
+    assert launcher.names("chat", "10.10.95.34")["completo"] == "https://10.10.95.34:8090/"  # the others go to the BE
+    assert launcher.names("voice", "10.10.95.34")["completo"] == "https://10.10.95.34:8090/"
+    assert launcher.names("chat", "")["chat"] == "http://chat.localhost:8080/"
+    assert launcher.names("voice", "")["voce"] == "http://voce.localhost:8003/test-voice"
     assert launcher.OPEN == {"be": ["solo-be", "completo"], "chat": ["chat", "completo"], "voice": ["voce", "completo"]}
+
+
+def test_the_complete_site_is_probed_on_the_be_not_locally_for_chat_and_voice() -> None:
+    assert launcher.probes("be", "10.10.95.34")["completo"] == "https://127.0.0.1:8090/health"
+    assert launcher.probes("voice", "10.10.95.34")["completo"] == "https://10.10.95.34:8090/health"
 
 
 def test_tabs_open_when_the_servers_answer_and_a_dead_one_is_reported(monkeypatch: pytest.MonkeyPatch,
@@ -199,34 +207,40 @@ def test_tabs_open_when_the_servers_answer_and_a_dead_one_is_reported(monkeypatc
     server, url = _serve(serve.make_handler(serve.VoiceResolver("http://x:8003", "", ""), ""))
     opened: list[str] = []
     monkeypatch.setattr(launcher.webbrowser, "open", opened.append)
-    monkeypatch.setitem(launcher.PROBES, "completo", url + "/health")
-    monkeypatch.setitem(launcher.PROBES, "chat", "http://127.0.0.1:9/")  # never answers
     monkeypatch.setattr(launcher.time, "sleep", lambda s: None)
-    launcher._wait_and_open(["completo"], timeout_s=5)
-    assert opened == [launcher.NAMES["completo"]]
+    urls = {"completo": "https://be:8090/", "chat": "http://chat.localhost:8080/"}
+    probes = {"completo": url + "/health", "chat": "http://127.0.0.1:9/"}  # the second never answers
+    launcher._wait_and_open(["completo"], urls, probes, timeout_s=5)
+    assert opened == ["https://be:8090/"]
     ticks = iter([0.0, 0.0, 99.0, 99.0, 99.0])
     monkeypatch.setattr(launcher.time, "monotonic", lambda: next(ticks))
-    launcher._wait_and_open(["chat"], timeout_s=10)
+    launcher._wait_and_open(["chat"], urls, probes, timeout_s=10)
     assert "non ha risposto" in capsys.readouterr().out
     server.shutdown()
 
 
-def test_a_stale_complete_site_on_8090_is_detected(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_stale_server_on_the_gateway_port_is_detected(monkeypatch: pytest.MonkeyPatch) -> None:
     class Old(BaseHTTPRequestHandler):
         def log_message(self, *a: object) -> None:
             pass
 
         def do_GET(self) -> None:  # noqa: N802
-            body = b'{"status":"ok"}'  # the first version had no "version"
+            body = b'{"status":"ok","version":2}'  # the previous showcase server: no "gateway", version 2
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
 
     server, url = _serve(Old)
-    monkeypatch.setattr(launcher, "SHOWCASE_PORT", int(url.rsplit(":", 1)[1]))
-    assert launcher._showcase_is_current() is False
+    monkeypatch.setattr(launcher, "GATEWAY_PORT", int(url.rsplit(":", 1)[1]))
+    assert launcher._gateway_is_current() is False
     server.shutdown()
+
+
+def test_the_launcher_starts_no_local_copy_of_the_site_on_chat_and_voice() -> None:
+    text = (ROOT / "showcase" / "launcher.py").read_text(encoding="utf-8")
+    assert 'if role == "be":' in text and "gateway.py" in text
+    assert "serve.py" not in text and "AI4R_PEERS_FILE" not in text  # star topology: nothing peer-to-peer
 
 
 def test_the_machine_setup_hook_exists_and_cannot_stop_a_component() -> None:

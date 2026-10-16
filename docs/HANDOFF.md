@@ -112,3 +112,10 @@ invece di quelli reali (10.10.x.x). Ora gli indirizzi dei peer sono verificati e
 Se un servizio vecchio occupa 8003/8080/8090 il lanciatore lo segnala invece di tacere.
 Operatore: `python -m showcase.peers show|scan|set`. Elenco di tutti i siti: `docs/SITI.md`.
 Branch: tutti su `savov` finche' non e' in `main` (vedi sotto); nessuno committa direttamente su `savov` se non il proprietario.
+
+## Handoff 2026-10-16 (sera) — topologia a stella: il sito completo parte dal BE (gateway), da VOICE a team
+Regola della traccia applicata: CHAT e VOICE parlano solo con il BE. Il sito completo e' servito dal **gateway sul BE**
+(`showcase/gateway.py`, https :8090, reverse proxy): `/api/*` e `/docs` -> BE (database, area ristoratore), `/voice/*` + WebSocket -> PC VOICE,
+`/voice/site/chat/*` -> PC CHAT. I PC CHAT e VOICE aprono `https://<IP-BE>:8090/` (certificato autofirmato: "Avanzate -> Procedi" una volta).
+HTTPS serve per il microfono; `cryptography` e' ora in `setup/requirements/be.txt` (rilanciare `avvia.py` sul BE). Il PC voce non chiama piu' la chat.
+Verificato: wss attraverso il gateway verso un server voce reale (ready + audio), BE reale proxato, 230 test.

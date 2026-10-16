@@ -244,3 +244,4 @@ AVVIA_*.bat
 *.db-shm
 *.db-wal
 lan/peers.json
+lan/tls/

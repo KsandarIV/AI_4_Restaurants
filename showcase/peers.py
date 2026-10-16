@@ -121,7 +121,7 @@ def scan(role: str, nets: list[ipaddress.IPv4Network], timeout: float = 0.5) -> 
             return ""
         return ip if probe(role, ip, timeout=3.0) else ""
 
-    hosts = [str(h) for net in nets for h in net.hosts()]
+    hosts = ["127.0.0.1"] + [str(h) for net in nets for h in net.hosts()]  # loopback first: a service on this very PC
     with ThreadPoolExecutor(max_workers=128) as pool:
         for found in pool.map(open_port, hosts):
             if found:

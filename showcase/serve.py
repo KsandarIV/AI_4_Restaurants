@@ -64,12 +64,14 @@ def _be_base(be: str) -> str:
     return (be or f"http://{peers._be_host_from_env() or '127.0.0.1'}:8000").rstrip("/")
 
 
-def render_index(voice_base: str, be_base: str) -> bytes:
+def render_index(voice_base: str, be_base: str, gateway: bool = False) -> bytes:
     """index.html of the voice site wired to the voice PC, with the operator tools in the footer."""
     html = (SITE_DIR / "index.html").read_text(encoding="utf-8")
     inject = f'<script>window.VOICE_BASE = {json.dumps(voice_base)};</script>\n  {_APP_TAG}'
     html = html.replace(_APP_TAG, inject, 1)
-    html = html.replace('href="/prova-vocale"', f'href="{voice_base or "#"}/test-voice"')
+    # behind the BE gateway the voice test page would miss its WebSocket route: link the diagnostics instead
+    page = "diag" if gateway else "test-voice"
+    html = html.replace('href="/prova-vocale"', f'href="{voice_base or "#"}/{page}"')
     links = [("/staff.html", "Area ristoratore"), (f"{be_base}/docs", "Swagger del BE"),
              (f"{be_base}/api/health", "Salute del BE")]
     if voice_base:

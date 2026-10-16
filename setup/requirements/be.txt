@@ -4,3 +4,4 @@ langgraph>=0.2.0
 langgraph-checkpoint-sqlite>=2.0.0
 langchain-ollama>=0.2.0
 sqlalchemy>=2.0.0
+cryptography>=42  # certificato HTTPS del gateway sul BE (showcase/tls.py): senza HTTPS il microfono non funziona dagli altri PC
