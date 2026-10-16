@@ -10,12 +10,14 @@
 <body>
   <div id="banner" class="banner" hidden></div>
   <header class="topbar">
-    <a class="brand" href="#top">Bella Napoli</a>
+    <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">🍅</span>Bella Napoli <small>dal 1987</small></a>
     <nav>
       <a href="#chi-siamo" data-i18n="nav_about"></a>
       <a href="#menu" data-i18n="nav_menu"></a>
       <a href="#prenotazioni" data-i18n="nav_reservations"></a>
       <a href="#dove" data-i18n="nav_where"></a>
+      <a href="#contatti" data-i18n="nav_contacts"></a>
+      <a href="/staff.html" data-staff hidden data-i18n="nav_staff"></a>
     </nav>
     <button class="btn btn-small" data-open-assistant data-i18n="book_by_voice"></button>
   </header>
@@ -38,9 +40,9 @@
       <h2 data-i18n="nav_about"></h2>
       <p data-i18n="about_text"></p>
       <ul class="features">
-        <li><strong data-i18n="f1_title"></strong><span data-i18n="f1_text"></span></li>
-        <li><strong data-i18n="f2_title"></strong><span data-i18n="f2_text"></span></li>
-        <li><strong data-i18n="f3_title"></strong><span data-i18n="f3_text"></span></li>
+        <li><span class="ico" aria-hidden="true">🏡</span><strong data-i18n="f1_title"></strong><span data-i18n="f1_text"></span></li>
+        <li><span class="ico" aria-hidden="true">🌿</span><strong data-i18n="f2_title"></strong><span data-i18n="f2_text"></span></li>
+        <li><span class="ico" aria-hidden="true">🤝</span><strong data-i18n="f3_title"></strong><span data-i18n="f3_text"></span></li>
       </ul>
     </section>
 
@@ -74,9 +76,23 @@
           <h3 data-i18n="h_parking"></h3>
           <p data-info="parking">—</p>
         </div>
+        <div class="map-wrap">
+          <iframe id="map" title="Mappa del ristorante" data-i18n-title="map_title" loading="lazy" referrerpolicy="no-referrer"
+                  src="https://www.openstreetmap.org/export/embed.html?bbox=14.2440%2C40.8390%2C14.2560%2C40.8470&amp;layer=mapnik"></iframe>
+        </div>
+      </div>
+    </section>
+
+    <section id="contatti" class="section">
+      <h2 data-i18n="contacts_title"></h2>
+      <div class="two-col">
         <div>
           <h3 data-i18n="h_phone"></h3>
           <p><a data-info="phone" data-link="tel">—</a></p>
+          <h3 data-i18n="h_email"></h3>
+          <p><a data-info="email" data-link="mailto">—</a></p>
+        </div>
+        <div>
           <h3 data-i18n="h_services"></h3>
           <p data-info="services">—</p>
           <h3 data-i18n="h_payments"></h3>
@@ -84,10 +100,23 @@
         </div>
       </div>
     </section>
+
+    <!-- shown only when the page is served together with staff.html (showcase gateway / serve.py): hidden on the bare voice server -->
+    <section id="staff" class="section" data-staff hidden>
+      <h2 data-i18n="staff_title"></h2>
+      <div class="staff-box">
+        <p data-i18n="staff_text"></p>
+        <a class="btn" href="/staff.html" data-i18n="staff_button"></a>
+        <p class="staff-note" data-i18n="staff_note"></p>
+      </div>
+    </section>
   </main>
 
   <footer class="footer">
+    <p class="footer-brand">🍅 Bella Napoli</p>
+    <p class="footer-tag" data-i18n="footer_tag"></p>
     <p><span data-info="name">Trattoria Bella Napoli</span> · <span data-info="address">Via Toledo 142, Napoli</span> · <a href="/prova-vocale" style="color:inherit">pagina di test</a></p>
+    <p class="footer-staff" data-staff hidden><a href="/staff.html" data-i18n="staff_footer"></a></p>
   </footer>
 
   <div class="dock">

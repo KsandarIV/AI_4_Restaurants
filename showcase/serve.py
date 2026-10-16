@@ -69,6 +69,7 @@ def render_index(voice_base: str, be_base: str, gateway: bool = False) -> bytes:
     html = (SITE_DIR / "index.html").read_text(encoding="utf-8")
     inject = f'<script>window.VOICE_BASE = {json.dumps(voice_base)};</script>\n  {_APP_TAG}'
     html = html.replace(_APP_TAG, inject, 1)
+    html = html.replace(" data-staff hidden", " data-staff")  # staff.html is served next to this page here (not on the bare voice server)
     # behind the BE gateway the voice test page would miss its WebSocket route: link the diagnostics instead
     page = "diag" if gateway else "test-voice"
     html = html.replace('href="/prova-vocale"', f'href="{voice_base or "#"}/{page}"')

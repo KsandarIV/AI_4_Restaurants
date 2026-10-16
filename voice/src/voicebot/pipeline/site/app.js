@@ -22,7 +22,7 @@
       nav_about: "Chi siamo", nav_menu: "Menu", nav_reservations: "Le mie prenotazioni", nav_where: "Dove siamo",
       book_by_voice: "Prenota a voce", check_reservations: "Controlla le mie prenotazioni",
       eyebrow: "Trattoria · Via Toledo, Napoli",
-      hero_title: "La cucina campana, come a casa della nonna.",
+      hero_title: "La cucina campana,\ncome a casa della nonna.",
       hero_lead: "Paste di Gragnano, pomodori San Marzano, mozzarella di bufala. Prenota il tuo tavolo parlando con il nostro assistente.",
       about_text: "Dal 1987 serviamo i piatti della tradizione napoletana con materie prime del territorio. Tre ambienti: la sala interna, la terrazza e il giardino estivo. Ogni tavolo è libero per un turno di 90 minuti.",
       f1_title: "3 ambienti", f1_text: "sala, terrazza, giardino",
@@ -40,6 +40,10 @@
       status_confirmed: "Confermata", status_cancelled: "Cancellata", status_unknown: "Sconosciuta",
       persons: "persone", person: "persona", table: "tavolo", refresh: "Aggiorna", remove: "Rimuovi",
       h_address: "Indirizzo", h_hours: "Orari", h_parking: "Parcheggio", h_phone: "Telefono", h_services: "Servizi", h_payments: "Pagamenti",
+      h_email: "Email", nav_contacts: "Contatti", nav_staff: "Area staff", contacts_title: "Contatti e servizi",
+      staff_title: "Area staff", staff_text: "Per il personale del ristorante: consulta le prenotazioni, modificale o cancellale, chiudi il locale in una data e segna i piatti esauriti.",
+      staff_button: "Accedi all'area staff", staff_note: "Serve la chiave di accesso del ristorante.", staff_footer: "Area ristoratore",
+      footer_tag: "Cucina campana dal 1987", map_title: "Mappa del ristorante",
       assistant_title: "Assistente vocale", close: "Chiudi", orb_aria: "Tocca per avviare o terminare la conversazione",
       new_conversation: "Nuova conversazione", hang_up: "Termina",
       toast_confirmed: "Prenotazione confermata", toast_updated: "Prenotazione aggiornata",
@@ -60,7 +64,7 @@
       nav_about: "About", nav_menu: "Menu", nav_reservations: "My reservations", nav_where: "Find us",
       book_by_voice: "Book by voice", check_reservations: "Check my reservations",
       eyebrow: "Trattoria · Via Toledo, Naples",
-      hero_title: "Campanian cooking, just like grandma's.",
+      hero_title: "Campanian cooking,\njust like grandma's.",
       hero_lead: "Gragnano pasta, San Marzano tomatoes, buffalo mozzarella. Book your table by talking to our assistant.",
       about_text: "Since 1987 we serve the dishes of the Neapolitan tradition with local ingredients. Three rooms: indoors, the terrace and the summer garden. Each table is yours for a 90-minute turn.",
       f1_title: "3 rooms", f1_text: "indoor, terrace, garden",
@@ -78,6 +82,10 @@
       status_confirmed: "Confirmed", status_cancelled: "Cancelled", status_unknown: "Unknown",
       persons: "people", person: "person", table: "table", refresh: "Refresh", remove: "Remove",
       h_address: "Address", h_hours: "Opening hours", h_parking: "Parking", h_phone: "Phone", h_services: "Services", h_payments: "Payments",
+      h_email: "Email", nav_contacts: "Contact", nav_staff: "Staff area", contacts_title: "Contact and services",
+      staff_title: "Staff area", staff_text: "For the restaurant staff: check the reservations, change or cancel them, close the restaurant on a date and mark dishes as sold out.",
+      staff_button: "Open the staff area", staff_note: "The restaurant's access key is required.", staff_footer: "Restaurateur area",
+      footer_tag: "Campanian cooking since 1987", map_title: "Restaurant map",
       assistant_title: "Voice assistant", close: "Close", orb_aria: "Tap to start or end the conversation",
       new_conversation: "New conversation", hang_up: "Hang up",
       toast_confirmed: "Booking confirmed", toast_updated: "Booking updated",
@@ -105,6 +113,7 @@
     document.documentElement.lang = LANG;
     document.querySelectorAll("[data-i18n]").forEach((n) => { n.textContent = t(n.dataset.i18n); });
     document.querySelectorAll("[data-i18n-placeholder]").forEach((n) => { n.placeholder = t(n.dataset.i18nPlaceholder); });
+    document.querySelectorAll("[data-i18n-title]").forEach((n) => { n.title = t(n.dataset.i18nTitle); });
     document.querySelectorAll("[data-i18n-aria]").forEach((n) => { n.setAttribute("aria-label", t(n.dataset.i18nAria)); });
   }
 
@@ -168,6 +177,7 @@
         if (!v) return;
         n.textContent = v;
         if (n.dataset.link === "tel") n.href = "tel:" + String(v).replace(/[^\d+]/g, "");
+        if (n.dataset.link === "mailto") n.href = "mailto:" + v;
       });
     } catch (e) { /* the page keeps its placeholders */ }
   }
@@ -571,8 +581,31 @@
   // /site/chat/* only forwards to the CHAT service when CHAT_SERVICE_URL is set; otherwise it answers 503.
   const chatPanel = $("chat-panel"), chatMsgs = $("chat-msgs"), chatInput = $("chat-input");
   let chatSession = null;
+  // The bot answers in Markdown: turned into DOM nodes (never innerHTML, the text stays safe). Same helper as frontend/js/assistant.js.
+  function mdInline(parent, text) {
+    text.split(/(\*\*[^*]+\*\*)/).forEach((part) => {
+      if (part.startsWith("**") && part.endsWith("**") && part.length > 4) parent.append(el("strong", "", part.slice(2, -2)));
+      else if (part) parent.append(part.replace(/\*+/g, ""));
+    });
+  }
+  function renderMarkdown(box, text) {
+    let list = null;
+    text.split("\n").forEach((raw) => {
+      const line = raw.trim();
+      const bullet = line.match(/^[*\-•]\s+(.*)/);
+      if (bullet) {
+        if (!list) { list = el("ul"); box.append(list); }
+        const li = el("li"); mdInline(li, bullet[1]); list.append(li);
+        return;
+      }
+      list = null;
+      if (!line) return;
+      const p = el("p"); mdInline(p, line.replace(/^#+\s*/, "")); box.append(p);
+    });
+  }
   function chatLine(who, text) {
-    const m = el("div", "msg " + who, text);
+    const m = el("div", "msg " + who);
+    if (who === "bot") renderMarkdown(m, text); else m.textContent = text;
     chatMsgs.append(m);
     m.scrollIntoView({ block: "nearest" });
     return m;
