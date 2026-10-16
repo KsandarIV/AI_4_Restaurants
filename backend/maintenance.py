@@ -24,7 +24,7 @@ def backup_database(dest_dir: Optional[Path] = None, keep: int = 14) -> Path:
     source = engine.url.database
     if engine.dialect.name != "sqlite" or not source:
         raise RuntimeError("Il backup automatico funziona solo con SQLite.")
-    dest_dir = Path(dest_dir) if dest_dir else settings.BASE_DIR / "backend" / "backups"
+    dest_dir = Path(dest_dir) if dest_dir else Path(source).parent / "backups"
     dest_dir.mkdir(parents=True, exist_ok=True)
     target = dest_dir / f"restaurant_{datetime.datetime.now():%Y%m%d_%H%M%S}.db"
     src, dst = sqlite3.connect(source), sqlite3.connect(target)

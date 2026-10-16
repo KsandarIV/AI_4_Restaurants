@@ -92,7 +92,7 @@ Per ripartire con un database pulito: spegni il BE e cancella `backend\restauran
    modifiche e cancellazioni richiedono una conferma esplicita scritta dal codice; allergie e intolleranze non passano
    dal modello (aveva inventato piatti); l'identità del cliente viene dalla sessione, mai dal modello.
 4. Dati: SQLite, orari generati dalla configurazione, menu riallineato all'avvio, backup e conservazione dei dati.
-5. Test: 145 test automatici, isolati su un database temporaneo; dimostrati con mutazioni (togliendo una protezione il
+5. Test: 151 test automatici, isolati su un database temporaneo; dimostrati con mutazioni (togliendo una protezione il
    test fallisce).
 6. Limiti dichiarati (sezione 7) e prossimi passi: il frontend, dopo l'approvazione.
 
