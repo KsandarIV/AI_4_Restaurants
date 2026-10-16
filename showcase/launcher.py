@@ -32,7 +32,7 @@ from showcase import peers
 GATEWAY_PORT = 8090
 FRONTEND_PORT = 8080
 VOICE_PORT = 8003
-GATEWAY_VERSION = 3  # must match showcase/gateway.py: an older server left on the port is reported, not trusted
+GATEWAY_VERSION = 4 # must match showcase/gateway.py: an older server left on the port is reported, not trusted
 
 _UNVERIFIED = ssl.create_default_context()  # the gateway is self-signed: for a *health probe* we only need it to answer
 _UNVERIFIED.check_hostname = False
@@ -120,6 +120,34 @@ def _discover_in_background(own_ip: str, be_host: str) -> None:
             time.sleep(10)  # that PC may simply not be up yet
 
 
+def _announce(role: str, be_host: str) -> bool:
+    """One ``POST /register`` to the BE gateway (https first, then http); True when the BE cached this PC."""
+    for scheme in ("https", "http"):
+        req = urllib.request.Request(f"{scheme}://{be_host}:{GATEWAY_PORT}/register?role={role}", data=b"", method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5, context=_UNVERIFIED if scheme == "https" else None):  # noqa: S310
+                return True
+        except Exception:  # noqa: BLE001 - gateway down, certificate/scheme mismatch, 409 (service not up yet): retry later
+            continue
+    return False
+
+
+def _announce_in_background(role: str, be_host: str, period_s: float = 20.0) -> None:
+    """CHAT/VOICE: keep telling the BE gateway where this PC is, so the BE never has to scan the LAN.
+
+    Repeated forever (cheap): the BE may start later than this PC, restart, or this PC's address may change.
+    """
+    announced = False
+    while True:
+        ok = _announce(role, be_host)
+        if ok and not announced:
+            log(f"annunciato al BE ({be_host}:{GATEWAY_PORT}) come '{role}'")
+        elif not ok and announced:
+            log(f"BE ({be_host}:{GATEWAY_PORT}) non raggiungibile: riprovo")
+        announced = ok
+        time.sleep(period_s if ok else 5.0)
+
+
 def start_showcase(role: str, root: Path, hosts: dict[str, str]) -> list["subprocess.Popen[bytes]"]:
     """Start the extra servers of ``role`` and schedule the browser tabs. Returns processes to clean up."""
     venv_python = root / ".venv" / "Scripts" / "python.exe"
@@ -139,6 +167,8 @@ def start_showcase(role: str, root: Path, hosts: dict[str, str]) -> list["subpro
             procs.append(subprocess.Popen([exe, str(root / "showcase" / "gateway.py"), "--port", str(GATEWAY_PORT)],
                                           cwd=str(root)))
         threading.Thread(target=_discover_in_background, args=(own_ip, be_host), daemon=True).start()
+    if role in ("chat", "voice") and be_host:
+        threading.Thread(target=_announce_in_background, args=(role, be_host), daemon=True).start()
     if role == "chat":
         if _port_busy(FRONTEND_PORT):
             log(f"porta {FRONTEND_PORT} gia' occupata: se non e' il sito di frontend/ aggiornato, chiudi il processo vecchio")

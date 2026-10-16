@@ -8,7 +8,11 @@ Resolution order for the host of a peer role (first one that PASSES the health p
   1. ``AI4R_<ROLE>_HOST``  environment variable            (explicit operator override)
   2. ``lan/peers.json``    local cache, written by this module (git-ignored)
   3. the address in ``lan/lan_config.json``                  (only if it answers: examples never do)
-  4. an active scan of the local /24 networks (this PC's and the BE's), 128 parallel probes, ~2-4 s, bounded
+  4. an active scan of the local network (this PC's real netmask, e.g. a /22 = four /24 blocks), 128 parallel probes,
+     a few seconds, bounded
+
+Besides, CHAT and VOICE *announce themselves* to the BE gateway (``POST /register``, see gateway.py): the gateway verifies
+the announced address with the same probe and caches it, so on a normal run no scan is needed at all.
 
 A probe is a TCP+HTTP request to the role's well-known port whose answer must carry the role's *signature*
 (a field only that service returns), so a stray web server on the same port is never mistaken for the peer.
@@ -25,7 +29,9 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 import socket
+import subprocess
 import sys
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -88,6 +94,14 @@ def forget(role: str) -> None:
         _save(peers)
 
 
+def register(role: str, host: str) -> bool:
+    """A peer announced itself at ``host``: cache it only if it really answers as ``role`` (same probe as discovery)."""
+    if role not in ("chat", "voice") or not host or not probe(role, host, timeout=3.0):
+        return False
+    remember(role, host)
+    return True
+
+
 def _config_host(role: str) -> str:
     try:
         node = json.loads(CONFIG_FILE.read_text(encoding="utf-8")).get(role, {})
@@ -96,12 +110,42 @@ def _config_host(role: str) -> str:
         return ""
 
 
-def networks(own_ip: str, be_host: str) -> list[ipaddress.IPv4Network]:
-    """The /24 networks worth scanning: this PC's and the BE's (both are known to be on the LAN)."""
+SCAN_MIN_PREFIX = 21  # never scan more than a /21 (2046 hosts): bounded even if the netmask looks absurd
+_MASK = re.compile(r"\b(255(?:\.\d{1,3}){3})\b")
+
+
+def _prefix_of(ip: str) -> int:
+    """Prefix length of the interface that owns ``ip`` (parsed from ``ipconfig``, language independent); 24 when unknown."""
+    if not ip or sys.platform != "win32":
+        return 24
+    try:
+        out = subprocess.run(["ipconfig"], capture_output=True, text=True, timeout=5, check=False).stdout  # noqa: S603, S607
+    except (OSError, subprocess.SubprocessError):
+        return 24
+    lines = out.splitlines()
+    for i, line in enumerate(lines):
+        if re.search(rf"(?<![\d.]){re.escape(ip)}(?![\d.])", line):
+            for follow in lines[i + 1:i + 4]:  # the netmask is the next address-looking line of the same adapter
+                found = _MASK.search(follow)
+                if found:
+                    try:
+                        return ipaddress.ip_network(f"0.0.0.0/{found.group(1)}").prefixlen
+                    except ValueError:
+                        return 24
+    return 24
+
+
+def networks(own_ip: str, be_host: str, prefix: int | None = None) -> list[ipaddress.IPv4Network]:
+    """The networks worth scanning: this PC's (REAL netmask, not an assumed /24) and the BE's with the same mask.
+
+    On a LAN such as 10.10.92.0/22 the three PCs sit in different /24 blocks (92.x, 93.x, 95.x): scanning only a /24
+    would never find the others. The mask is capped at ``SCAN_MIN_PREFIX`` so the scan stays short.
+    """
+    width = max(_prefix_of(own_ip) if prefix is None else prefix, SCAN_MIN_PREFIX)
     nets: list[ipaddress.IPv4Network] = []
     for ip in (own_ip, be_host):
         try:
-            net = ipaddress.ip_network(f"{ip}/24", strict=False)
+            net = ipaddress.ip_network(f"{ip}/{width}", strict=False)
         except ValueError:
             continue
         if isinstance(net, ipaddress.IPv4Network) and net not in nets and not net.is_loopback:

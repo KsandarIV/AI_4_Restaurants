@@ -47,10 +47,12 @@ indirizzo è mai creduto: è **verificato**. Per ogni servizio remoto si prova, 
 firma del servizio** (un campo che solo quel servizio restituisce: BE `restaurant` su `/api/health`, chat `be_url` su `/health`,
 voce `require_registration` su `/site/config`):
 
+0. **auto-annuncio**: all'avvio CHAT e VOICE chiamano `POST https://<IP-BE>:8090/register?role=chat|voice` (ogni 20 s, finché il BE non risponde);
+   il gateway prende l'indirizzo **di chi chiama**, lo verifica con la sonda qui sotto e lo mette in cache. Di norma la scansione non serve;
 1. variabile `AI4R_<RUOLO>_HOST` (forzatura dell'operatore);
 2. cache locale `lan/peers.json` (ignorata da Git), riverificata a ogni uso e scartata se non risponde;
 3. l'indirizzo di `lan_config.json`, solo se risponde;
-4. scansione limitata delle sottoreti /24 di questo PC e del BE (128 sonde in parallelo, qualche secondo).
+4. scansione limitata della rete di questo PC con la **maschera reale** (es. una /22 = 10.10.92.0-10.10.95.255; massimo /21), 128 sonde in parallelo, qualche secondo.
 
 Il risultato viene riletto **a ogni caricamento della pagina**: si può accendere il PC voce dopo, o cambiare IP, senza riavviare nulla.
 Il server voce trova da solo il PC chat allo stesso modo (`AI4R_PEERS_FILE`); `CHAT_SERVICE_URL` nel `.env`, se impostato, ha la precedenza.

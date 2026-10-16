@@ -38,7 +38,7 @@ sys.path.insert(0, str(ROOT))
 
 from showcase import peers, serve  # noqa: E402
 
-VERSION = 3
+VERSION = 4
 _HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
                "transfer-encoding", "upgrade", "host", "content-length", "content-encoding"}
 _TTL_OK_S, _TTL_MISS_S = 15.0, 3.0
@@ -56,6 +56,10 @@ class PeerCache:
     def peek(self) -> str:
         """The last resolved address, without probing or scanning (for /health, which must always answer fast)."""
         return self._fixed or self._value
+
+    def reset(self) -> None:
+        """Forget the cached answer (a peer just announced itself): the next call re-reads the verified cache."""
+        self._until = 0.0
 
     def __call__(self) -> str:
         if self._fixed:
@@ -114,6 +118,22 @@ def create_gateway(be_url: str, voice: Resolver, chat: Resolver) -> FastAPI:
         peek = getattr(voice, "peek", voice), getattr(chat, "peek", chat)  # never block a health check on a LAN scan
         v, c = peek[0](), peek[1]()
         return {"status": "ok", "version": VERSION, "gateway": True, "be": be_url, "voice": v or None, "chat": c or None}
+
+    @app.post("/register")
+    async def register(role: str, request: Request) -> JSONResponse:
+        """CHAT and VOICE announce themselves here (``?role=chat|voice``): the address is the caller's own, never a body field.
+
+        It is cached only if that address really answers as ``role`` (service signature probe), so a wrong or early call
+        is harmless: the announcer retries (409 = "not up yet").
+        """
+        resolver = {"voice": voice, "chat": chat}.get(role)
+        host = (request.client.host if request.client else "").removeprefix("::ffff:")
+        if resolver is None:
+            return JSONResponse({"detail": "role must be chat or voice"}, status_code=400)
+        if not await asyncio.to_thread(peers.register, role, host):
+            return JSONResponse({"detail": f"{host or '?'} does not answer as '{role}' yet"}, status_code=409)
+        getattr(resolver, "reset", lambda: None)()
+        return JSONResponse({"role": role, "host": host})
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> Response:
