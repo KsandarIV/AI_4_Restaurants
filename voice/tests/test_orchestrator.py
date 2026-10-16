@@ -201,3 +201,48 @@ async def test_history_never_stores_contact_data_and_is_trimmed() -> None:
             orch._remember("user", f"m{i}")
         assert len(orch.history) <= orch._max_history + 1 and orch.history[0].role == "system"
         await orch.aclose()
+
+
+async def _registered_asking_to_book(url: str) -> BackendOrchestrator:
+    orch = make_orchestrator(url)
+    await orch.opening()
+    await orch.reply("Buongiorno, vorrei prenotare un tavolo")  # lazy registration starts here
+    await orch.reply("Mario Rossi, 333 1234567")
+    return orch
+
+
+async def test_a_barge_in_during_the_first_booking_turn_does_not_lose_the_request() -> None:
+    """Registered, then the caller talks over the bot while the BE is thinking: the booking request must survive."""
+    import asyncio
+
+    async with stub_be() as (url, state):
+        orch = await _registered_asking_to_book(url)
+        state.chat_delay_s = 3.0  # the BE (cold LLM) takes a while
+
+        async def turn() -> str:
+            return "".join([t async for t in orch.stream_reply("sì")])  # confirms the registration, replays the request
+
+        task = asyncio.create_task(turn())
+        await asyncio.sleep(0.8)
+        task.cancel()  # barge-in: the turn is cancelled before the BE answered
+        with __import__("contextlib").suppress(asyncio.CancelledError):
+            await task
+        assert orch.registered and orch._replay, "the stored booking request was lost"
+        state.chat_delay_s = 0.0
+        out = "".join([t async for t in orch.stream_reply("domani alle 21 per due persone")])
+        assert "Confermi" in out, out  # the request was re-sent together with the new details
+        assert orch._replay is None  # ...and forgotten only now that the BE answered
+        assert "prenot" in str(state.chat_payloads[-1].get("messages")).lower()
+        await orch.aclose()
+
+
+async def test_a_failed_first_booking_turn_is_retried_not_forgotten() -> None:
+    async with stub_be() as (url, state):
+        orch = await _registered_asking_to_book(url)
+        state.fail_chat_status = 503
+        out = await orch.reply("sì")
+        assert "modello linguistico" in out and orch._replay  # apology, request kept
+        state.fail_chat_status = 0
+        assert "Confermi" in await orch.reply("per due persone domani alle 20")
+        assert orch._replay is None
+        await orch.aclose()

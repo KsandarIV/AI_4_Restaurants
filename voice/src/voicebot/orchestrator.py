@@ -97,6 +97,7 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         self.phase = Phase.CHAT  # registration starts only when the caller wants to book
         self._pending: str | None = None  # the booking request that triggered the registration
         self._replay: str | None = None  # ...ready to be sent to the BE once registered
+        self._backend_ok = False  # did the BE answer the last request completely? (see _replay)
         self._area_said = False  # the caller asked for a room (terrazza, giardino...) in this booking
         self._exchanges = 0  # BE turns in the current BE session (= the LLM's context grows with them)
         self._resets = 0  # times the context was refreshed without reaching a booking
@@ -131,12 +132,19 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         """One complete reply through ``POST /api/chat`` (on-demand v2 mode)."""
         local = await self._local_turn(user_text)
         if local is not None:
-            replay = self._take_replay()
-            return f"{local} {await self._backend_reply(replay)}" if replay else local
-        return await self._backend_reply(user_text)
+            replay = self._replay_text()
+            if not replay:
+                return local
+            answer = await self._backend_reply(replay)
+            self._replay_done()
+            return f"{local} {answer}"
+        answer = await self._backend_reply(self._with_replay(user_text))
+        self._replay_done()
+        return answer
 
     async def _backend_reply(self, user_text: str) -> str:
         self._exchanges += 1
+        self._backend_ok = False
         anonymized = await self._anonymize(user_text)
         try:
             text = ""
@@ -150,6 +158,7 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
                 log.warning("tool talk in the reply, attempt=%d", attempt + 1)
             else:
                 text = say(self._language, "retry_request")
+            self._backend_ok = True
             report = await self._final_report(text)
             if report:
                 text = f"{text} {report}"
@@ -164,17 +173,20 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         local = await self._local_turn(user_text)
         if local is not None:
             yield local
-            replay = self._take_replay()
+            replay = self._replay_text()
             if replay:
                 yield " "
                 async for piece in self._backend_stream(replay):
                     yield piece
+                self._replay_done()  # only reached when the BE really answered (not cancelled, not failed)
             return
-        async for piece in self._backend_stream(user_text):
+        async for piece in self._backend_stream(self._with_replay(user_text)):
             yield piece
+        self._replay_done()
 
     async def _backend_stream(self, user_text: str) -> AsyncIterator[str]:
         self._exchanges += 1
+        self._backend_ok = False
         anonymized = await self._anonymize(user_text)
         spoken: list[str] = []
         try:
@@ -233,6 +245,7 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
                 yield fallback
             if not spoken:  # the BE answered with an empty stream
                 raise BackendError("empty reply", kind="format")
+            self._backend_ok = True
             report = await self._final_report("".join(spoken))
             if report:  # the closing summary, spoken right after the BE's own answer
                 spoken.append(f" {report}")
@@ -328,12 +341,27 @@ class BackendOrchestrator(AbstractLLMOrchestrator):
         self._remember("assistant", reply)
         return reply
 
-    def _take_replay(self) -> str | None:
-        """The booking request to send to the BE now (once), or None."""
-        replay, self._replay = self._replay, None
-        if replay:
-            self._remember("user", replay)
-        return replay
+    def _replay_text(self) -> str | None:
+        """The booking request waiting to be sent to the BE (it stays until the BE has really answered).
+
+        A request is only forgotten once answered: if the caller talks over the bot (barge-in) while the BE is
+        still thinking, the turn is cancelled and the request must NOT be lost - otherwise the caller ends up
+        registered (name and phone saved) but with no booking and nobody asking for date, time and party size.
+        """
+        if self._replay:
+            self._remember("user", self._replay)
+        return self._replay
+
+    def _with_replay(self, text: str) -> str:
+        """If an earlier booking request never got its answer, send it together with what was just said."""
+        if self._replay:
+            return f"{self._replay}. {text}"
+        return text
+
+    def _replay_done(self) -> None:
+        """Forget the stored booking request, but only when the BE answered it completely."""
+        if self._backend_ok:
+            self._replay = None
 
     def _who(self) -> str:
         """' for Mario Rossi' - spoken locally, the name never goes to the BE."""
