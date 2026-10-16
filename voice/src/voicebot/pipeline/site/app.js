@@ -4,6 +4,10 @@
 (function () {
   "use strict";
 
+  // Normally the page is served by the voice server itself (same origin). The "complete site" of
+  // showcase/ serves this very file from another machine and sets window.VOICE_BASE = "http://<voice-pc>:8003".
+  const API = (window.VOICE_BASE || "").replace(/\/$/, "");
+  const WS_BASE = API ? API.replace(/^http/, "ws") : (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
   const $ = (id) => document.getElementById(id);
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
@@ -149,7 +153,7 @@
   }
   async function loadMenu() {
     try {
-      dishes = await getJson("/site/menu");
+      dishes = await getJson(API + "/site/menu");
       if (!dishes.length) throw new Error("empty");
       renderFilters(); renderMenu();
     } catch (e) {
@@ -158,7 +162,7 @@
   }
   async function loadInfo() {
     try {
-      const info = await getJson("/site/info");
+      const info = await getJson(API + "/site/info");
       document.querySelectorAll("[data-info]").forEach((n) => {
         const v = info[n.dataset.info];
         if (!v) return;
@@ -215,7 +219,7 @@
     const msg = $("lookup-msg");
     if (!store.customer_id) { if (loud) msg.textContent = t("need_registration"); return "none"; }
     try {
-      const d = await getJson("/site/reservation/" + encodeURIComponent(code) + "?customer_id=" + encodeURIComponent(store.customer_id));
+      const d = await getJson(API + "/site/reservation/" + encodeURIComponent(code) + "?customer_id=" + encodeURIComponent(store.customer_id));
       upsert({ code: d.booking_code || code, date: d.date, time: d.time, guests: d.guests_count, status: d.status,
                table: d.table_number, location: d.table_location });
       if (loud) msg.textContent = "";
@@ -515,7 +519,7 @@
   }
   window.voiceSite = { handle: onMessage, orbIn, orbOut };  // lets a console / test feed server events to the page
   function connect() {
-    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/voice");
+    ws = new WebSocket(WS_BASE + "/ws/voice");
     ws.binaryType = "arraybuffer";
     ws.onopen = () => { retry = 0; };
     ws.onmessage = onMessage;
@@ -585,7 +589,7 @@
   }
   async function chatStart() {
     chatMsgs.replaceChildren(); chatSession = null;
-    try { const d = await chatPost("/site/chat/session"); chatSession = d.session_id; chatLine("bot", d.reply); }
+    try { const d = await chatPost(API + "/site/chat/session"); chatSession = d.session_id; chatLine("bot", d.reply); }
     catch (e) { chatLine("error", e.message); }
   }
   function openChat() { chatPanel.hidden = false; if (!chatSession) chatStart(); chatInput.focus(); }
@@ -600,8 +604,8 @@
     chatLine("user", text);
     const typing = chatLine("bot typing", "…");
     try {
-      if (!chatSession) { const d = await chatPost("/site/chat/session"); chatSession = d.session_id; }
-      const d = await chatPost("/site/chat/message", { session_id: chatSession, text });
+      if (!chatSession) { const d = await chatPost(API + "/site/chat/session"); chatSession = d.session_id; }
+      const d = await chatPost(API + "/site/chat/message", { session_id: chatSession, text });
       typing.remove(); chatLine("bot", d.reply);
     } catch (e) {
       typing.remove(); chatLine("error", e.message);
@@ -612,7 +616,7 @@
   // ---------------------------------------------------------------- start
   (async function init() {
     let cfg = {};
-    try { cfg = await getJson("/site/config"); } catch (e) { /* defaults */ }
+    try { cfg = await getJson(API + "/site/config"); } catch (e) { /* defaults */ }
     LANG = cfg.language === "en" ? "en" : "it";
     applyI18n();
     if (cfg.mode === "local") { const b = $("banner"); b.hidden = false; b.textContent = t("banner_local"); }

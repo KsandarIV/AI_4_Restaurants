@@ -71,3 +71,14 @@ sulla macchina voice.
 `docs/studio/voice/`: `MANUALE_TECNICO.md` (comandi per componente, test, sessioni live, **configurazioni di avvio** a tre macchine e alternative),
 `PRESENTAZIONE.md` (copione passo per passo), `flowchart_flusso_codice.svg` (flowchart verticale: avvio → chiamata → chiusura) e le mini-presentazioni PDF.
 
+## Siti della demo (si aprono da soli con `python entrypointvvia.py`) — dettagli in `showcase/README.md`
+
+| Macchina | Indirizzo | Cosa |
+|---|---|---|
+| BE | `http://solo-be.localhost:8080/` | sito senza chat/voce funzionanti (compaiono in basso a destra) |
+| BE | `http://completo.localhost:8090/` | sito **completo**: chat + voce funzionano con i PC CHAT e VOICE |
+| CHAT | `http://chat.localhost:8080/` | il sito di `frontend/` con la chat (parte da solo) |
+| VOICE | `http://voce.localhost:8003/test-voice` | pagina di test voce: orb + schede STATO e TECNICA |
+
+Il sito completo si apre anche su CHAT e VOICE (`completo.localhost:8090`). `*.localhost` = "questo PC" e conta come
+pagina sicura: il microfono funziona, mentre da `http://192.168.x.x` il browser lo blocca.

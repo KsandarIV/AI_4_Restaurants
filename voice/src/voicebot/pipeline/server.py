@@ -25,6 +25,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -198,6 +199,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await models.close()
 
     app = FastAPI(title="Voice bot - Trattoria Bella Napoli", lifespan=lifespan)
+    # The complete site (showcase/) is served from another origin and calls /site/* here: LAN demo, so open.
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     app.state.models = models
     app.state.settings = settings
 

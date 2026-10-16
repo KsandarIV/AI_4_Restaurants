@@ -31,6 +31,13 @@ The test page is the original one — liquid orb with its animations, **TECNICA*
 now also showing the live transcript under the orb, reconnecting by itself and stopping the sound at once
 when you interrupt.
 
+## The complete site (chat + voice across the three PCs)
+
+`http://completo.localhost:8090/` (opened automatically by `avvia.py`, and available on every machine) is this very
+site served locally by `showcase/serve.py` and pointed at the voice PC: the microphone works (`*.localhost` is a secure
+page) while voice, `/site/*` and the chat window go over the network to the voice server and, through it, to the CHAT PC.
+The voice server therefore allows CORS. See `showcase/README.md`.
+
 ## The site (same kind of site as the chat bot's)
 
 Open `http://localhost:8003/` (local mode prints the exact address). It has the restaurant look of

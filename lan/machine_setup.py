@@ -367,6 +367,16 @@ def start_component(role: str, config: dict[str, object]) -> int:
         except FileNotFoundError:
             log(f"ATTENZIONE: {e_argv[0]} non trovato, salto questo processo.")
 
+    # Siti della demo (sito completo, pagina del collega chat, apertura browser): cartella showcase/, nuova e
+    # separata, cosi' nessuno tocca file altrui. Un suo errore non deve mai fermare il componente.
+    try:
+        sys.path.insert(0, str(ROOT))
+        from showcase.launcher import start_showcase
+
+        extras += start_showcase(role, ROOT, effective_hosts(config, load_identity()))
+    except Exception as exc:  # noqa: BLE001
+        log(f"showcase non avviato ({exc}): il componente parte lo stesso")
+
     log(f"avvio {role}: {' '.join(argv)}  (cwd={cwd}, Ctrl+C per fermare)")
     proc = None
     try:

@@ -101,3 +101,10 @@ git push
   (`git status` dice quali file; tenete una versione per file con `git checkout --ours/--theirs -- <file>`);
 - file locali (`.env`, `.venv/`, `lan/macchina.json`, `voice/models/`, DB) NON si committano mai
   (sono già nel `.gitignore`): ogni macchina li genera da sola.
+
+## Siti della demo (automatici)
+
+Dopo `python entrypointvvia.py` si aprono da soli i siti di ogni macchina (BE: `solo-be.localhost:8080` e
+`completo.localhost:8090`; CHAT: `chat.localhost:8080`; VOICE: `voce.localhost:8003/test-voice`). Il sito completo
+si apre anche su CHAT e VOICE. Dettagli e motivi (microfono, `*.localhost`): [showcase/README.md](../showcase/README.md).
+`AI4R_NO_BROWSER=1` per non aprire il browser.
