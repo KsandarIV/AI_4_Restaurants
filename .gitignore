@@ -243,3 +243,4 @@ AVVIA_*.bat
 # SQLite: file di appoggio del database
 *.db-shm
 *.db-wal
+lan/peers.json

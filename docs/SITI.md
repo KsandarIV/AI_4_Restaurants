@@ -7,12 +7,12 @@ sostituite `localhost` con l'IP di quella macchina (vedi [le porte](#porte-e-fir
 > I nomi `*.localhost` (es. `completo.localhost`) significano "questo PC" e il browser li considera **pagine sicure**:
 > è l'unico modo per avere il **microfono** senza HTTPS. Si aprono da soli con `python entrypoint\avvia.py`.
 
-## 1. I siti da mostrare (si aprono da soli)
+## 1. I siti da mostrare (si aprono da soli, su ogni macchina: pagina di test del ruolo + sito completo)
 
 | Macchina | Sito | Link | Cosa c'è dentro |
 |---|---|---|---|
 | **BE** | Sito **senza** chat/voce funzionanti | [solo-be.localhost:8080](http://solo-be.localhost:8080/) | il sito del ristorante (`frontend/`): menu, orari, dove siamo; chat e voce compaiono in basso a destra ma non rispondono |
-| **BE** (anche CHAT e VOICE) | Sito **completo** | [completo.localhost:8090](http://completo.localhost:8090/) | pulsante **voce** con orb animato, finestrella **chat**, menu, **Le mie prenotazioni**, riepilogo finale a voce. Chat e voce parlano con i PC CHAT e VOICE |
+| **BE** (anche CHAT e VOICE) | Sito **completo** | [completo.localhost:8090](http://completo.localhost:8090/) | pulsante **voce** con orb animato, finestrella **chat**, menu, **Le mie prenotazioni**, riepilogo finale a voce, **Area ristoratore**, Swagger e salute del BE. Chat e voce parlano con i PC CHAT e VOICE (indirizzi trovati e verificati da soli: `python -m showcase.peers show`) |
 | **CHAT** | Sito del collega chat | [chat.localhost:8080](http://chat.localhost:8080/) | `frontend/` con la chat che funziona (finestrella), menu, orari |
 | **VOICE** | Pagina di test della voce | [voce.localhost:8003/test-voice](http://voce.localhost:8003/test-voice) | orb animato, schede laterali **STATO** (controlli, BE, modelli, eventi) e **TECNICA** (schede tecniche) |
 
@@ -55,7 +55,7 @@ Da riga di comando: `voice\voice doctor` (cosa non va), `voice\voice local` (tes
 | Pagina | Link | Cosa c'è dentro |
 |---|---|---|
 | Home | [localhost:8080](http://localhost:8080/) | sito del ristorante con assistente chat |
-| Area ristoratore | [localhost:8080/staff.html](http://localhost:8080/staff.html) | tabella delle prenotazioni con nome e telefono; si entra con la chiave `STAFF_API_KEY` del BE. Una prenotazione compare **solo se è stata confermata fino in fondo**: un cliente solo registrato non compare |
+| Area ristoratore | [localhost:8080/staff.html](http://localhost:8080/staff.html) (anche su [completo.localhost:8090/staff.html](http://completo.localhost:8090/staff.html)) | tabella delle prenotazioni con nome e telefono; si entra con la chiave `STAFF_API_KEY` del BE. Una prenotazione compare **solo se è stata confermata fino in fondo**: un cliente solo registrato non compare |
 
 ## Porte e firewall
 

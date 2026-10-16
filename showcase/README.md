@@ -4,19 +4,42 @@ Cartella **nuova e autonoma**: non tocca `frontend/`, `chat/`, `backend/`, `voic
 in conflitto per colpa sua. L'unico aggancio è un blocco in `lan/machine_setup.py` (`start_component`) che chiama
 `showcase.launcher.start_showcase()`; se fallisce, il componente parte lo stesso.
 
-## Cosa succede con `python entrypoint\avvia.py`
+## Cosa succede con `python entrypointvvia.py`
 
-Su ogni macchina, oltre al componente del ruolo, partono i siti e si apre il browser **da soli**:
+Su ogni macchina, oltre al componente del ruolo, partono i siti e si apre il browser **da soli**: la **pagina di test del proprio
+ruolo** e il **sito completo**.
 
 | Macchina | Si apre | Cos'è |
 |---|---|---|
 | **BE** | `http://solo-be.localhost:8080/` | il sito **senza** chat/voce funzionanti: compaiono in basso a destra (`frontend/`, com'era) |
-| **BE** | `http://completo.localhost:8090/` | il sito **completo**: chat e voce funzionano parlando con i PC CHAT e VOICE |
-| **CHAT** | `http://chat.localhost:8080/` | il sito del collega (`frontend/`) con la chat che funziona — parte da solo, non serve più `python -m http.server 8080 --directory frontend` |
-| **VOICE** | `http://voce.localhost:8003/test-voice` | la pagina di test della voce: orb + schede **STATO** e **TECNICA** |
+| **CHAT** | `http://chat.localhost:8080/` | il sito del collega (`frontend/`) con la chat che funziona — parte da solo |
+| **VOICE** | `http://voce.localhost:8003/test-voice` | pagina di test della voce: orb + schede **STATO** e **TECNICA** |
+| **tutte** | `http://completo.localhost:8090/` | il sito **completo**: voce con orb animato, finestrella chat, prenotazioni, **Area ristoratore** (`/staff.html`), Swagger e salute del BE |
 
-Il sito **completo** (`completo.localhost:8090`) si può aprire **anche su CHAT e VOICE**: ogni macchina lo serve da sé.
-Per disattivare l'apertura automatica: `set AI4R_NO_BROWSER=1`.
+Tutti gli indirizzi, con link e contenuto: [docs/SITI.md](../docs/SITI.md). Per non aprire il browser: `set AI4R_NO_BROWSER=1`.
+
+## Dove sono gli altri PC (scoperta dei servizi, `showcase/peers.py`)
+
+Gli IP in `lan/lan_config.json` sono **esempi** (192.168.1.x): su una LAN reale puntano a host inesistenti. Perciò nessun
+indirizzo è mai creduto: è **verificato**. Per ogni servizio remoto si prova, nell'ordine, e vince il primo che **risponde con la
+firma del servizio** (un campo che solo quel servizio restituisce: BE `restaurant` su `/api/health`, chat `be_url` su `/health`,
+voce `require_registration` su `/site/config`):
+
+1. variabile `AI4R_<RUOLO>_HOST` (forzatura dell'operatore);
+2. cache locale `lan/peers.json` (ignorata da Git), riverificata a ogni uso e scartata se non risponde;
+3. l'indirizzo di `lan_config.json`, solo se risponde;
+4. scansione limitata delle sottoreti /24 di questo PC e del BE (128 sonde in parallelo, qualche secondo).
+
+Il risultato viene riletto **a ogni caricamento della pagina**: si può accendere il PC voce dopo, o cambiare IP, senza riavviare nulla.
+Il server voce trova da solo il PC chat allo stesso modo (`AI4R_PEERS_FILE`); `CHAT_SERVICE_URL` nel `.env`, se impostato, ha la precedenza.
+
+```bat
+python -m showcase.peers show                     :: cosa si sa e se risponde adesso
+python -m showcase.peers scan                     :: riscopre voce e chat
+python -m showcase.peers set voice 10.10.95.50    :: fissa un indirizzo (solo se risponde davvero)
+```
+
+Se il PC voce non si trova, il sito completo mostra un avviso giallo con questo comando invece di una pagina muta.
 
 ## Perché `*.localhost`
 

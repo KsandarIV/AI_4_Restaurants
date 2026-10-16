@@ -35,6 +35,7 @@ from ..diagnostics import collect_diagnostics
 from ..interfaces import AbstractLLMOrchestrator, AbstractSTT, AbstractTTS
 from ..logging_json import get_logger, setup_logging
 from ..orchestrator import ANON_CUSTOMER_ID, BackendOrchestrator
+from ..peers_file import chat_service_url
 from ..stt import build_stt
 from ..tts import build_tts
 from ..vad import build_vad
@@ -277,11 +278,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     async def _chat_proxy(path: str, body: dict[str, Any]) -> Response:
         """The site's chat window: forwards to the CHAT service (chat/api.py) when CHAT_SERVICE_URL is set."""
-        if not settings.chat_service_url:
+        chat_base = chat_service_url(settings.chat_service_url)  # configured, else the verified CHAT peer
+        if not chat_base:
             return JSONResponse({"detail": "Il servizio chat non è collegato a questo server."}, status_code=503)
         try:
             async with httpx.AsyncClient(timeout=130.0) as client:
-                resp = await client.post(settings.chat_service_url.rstrip("/") + path, json=body)
+                resp = await client.post(chat_base + path, json=body)
         except httpx.HTTPError:
             return JSONResponse({"detail": "Non riesco a contattare il servizio chat."}, status_code=502)
         try:

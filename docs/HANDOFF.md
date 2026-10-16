@@ -103,3 +103,12 @@ File condivisi toccati: solo `lan/machine_setup.py` (un blocco in `start_compone
 NON toccati: `frontend/`, `chat/`, `backend/`. Server voce: CORS aperto (`allow_origins=["*"]`, rete di demo).
 Attenzione: `frontend/js/config.js` ha `be.baseUrl` fisso su un IP (10.10.95.34): se il BE cambia IP va aggiornato
 (file di chi cura il frontend). Per non andare in conflitto: ognuno solo la sua cartella, `git pull --rebase` prima di pushare.
+
+## Handoff 2026-10-16 (pomeriggio) — LAN: scoperta dei servizi e siti su tutte le macchine, da VOICE a team
+Causa del "la chat non funziona sul sito completo": il lanciatore usava gli IP di esempio di `lan/lan_config.json` (192.168.1.x)
+invece di quelli reali (10.10.x.x). Ora gli indirizzi dei peer sono verificati e riscoperti (`showcase/peers.py`, cache
+`lan/peers.json` ignorata da Git); il sito completo li rilegge a ogni caricamento. Il sito completo ora ha anche l'Area ristoratore
+(`/staff.html`, dati dal BE reale), Swagger e salute del BE; si apre su tutte le macchine insieme alla pagina di test del ruolo.
+Se un servizio vecchio occupa 8003/8080/8090 il lanciatore lo segnala invece di tacere.
+Operatore: `python -m showcase.peers show|scan|set`. Elenco di tutti i siti: `docs/SITI.md`.
+Branch: tutti su `savov` finche' non e' in `main` (vedi sotto); nessuno committa direttamente su `savov` se non il proprietario.
